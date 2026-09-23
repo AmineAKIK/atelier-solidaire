@@ -1,11 +1,13 @@
-import { describe, it, expect } from 'vitest'
+import { describe, expect, it } from 'vitest'
+import { shallowMount } from '@vue/test-utils'
+import { RouterView } from 'vue-router'
 
-import { mount } from '@vue/test-utils'
 import App from '../App.vue'
 
 describe('App', () => {
-  it('mounts renders properly', () => {
-    const wrapper = mount(App)
-    expect(wrapper.text()).toContain('You did it!')
+  it('renders the router outlet', () => {
+    const wrapper = shallowMount(App)
+
+    expect(wrapper.findComponent(RouterView).exists()).toBe(true)
   })
 })
