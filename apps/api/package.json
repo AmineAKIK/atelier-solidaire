@@ -2,12 +2,13 @@
   "name": "atelier-solidaire-api",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
+  "main": "dist/server.js",
   "scripts": {
     "test": "vitest --run",
     "dev": "tsx watch src/server.ts",
-    "start": "tsx src/server.ts",
-    "type-check": "tsc --noEmit"
+    "start": "node dist/server.js",
+    "type-check": "tsc --noEmit",
+    "build": "tsc"
   },
   "keywords": [],
   "author": "",
