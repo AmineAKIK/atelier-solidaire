@@ -86,6 +86,32 @@ interface ApiErrorBody {
   code?: string
 }
 
+interface AvailabilityResponseWire {
+  workshop: Omit<Workshop, 'id'> & {
+    id: unknown
+  }
+  availability: Array<
+    Omit<
+      AvailabilitySlot,
+      'slotId' | 'categoryId' | 'volunteers' | 'capacity' | 'reserved' | 'remaining'
+    > & {
+      slotId: unknown
+      categoryId: unknown
+      volunteers: unknown
+      capacity: unknown
+      reserved: unknown
+      remaining: unknown
+    }
+  >
+}
+
+interface CreateReservationResponseWire {
+  reservation: Omit<CreateReservationResponse['reservation'], 'id'> & {
+    id: unknown
+  }
+  capacity: CreateReservationResponse['capacity']
+}
+
 function getApiBaseUrl(): string {
   return import.meta.env.VITE_API_URL?.replace(/\/$/, '') ?? ''
 }
@@ -130,6 +156,72 @@ function toApiError(status: number, body: ApiErrorBody | null): ApiError {
     'server_error',
     'Le service de réservation rencontre un problème. Réessayez dans quelques instants.',
   )
+}
+
+/**
+ * Converts an API numeric field to a non-negative safe integer.
+ *
+ * node-postgres serializes BIGINT columns as strings to avoid precision loss. Normalizing those
+ * values at the HTTP boundary keeps identifiers numeric in Pinia state and in later POST payloads.
+ *
+ * @param value - Numeric value received from the API.
+ * @returns The normalized JavaScript number.
+ * @throws {ApiError} When the value is not a non-negative safe integer.
+ */
+function normalizeNonNegativeInteger(value: unknown): number {
+  const normalized =
+    typeof value === 'string' && value.trim() === '' ? Number.NaN : Number(value)
+
+  if (!Number.isSafeInteger(normalized) || normalized < 0) {
+    throw new ApiError(
+      'server_error',
+      'Le service de réservation rencontre un problème. Réessayez dans quelques instants.',
+    )
+  }
+
+  return normalized
+}
+
+/**
+ * Normalizes numeric fields returned by the availability endpoint.
+ *
+ * @param response - Raw availability response received from the API.
+ * @returns Availability data with numeric identifiers and counters.
+ */
+function normalizeAvailabilityResponse(response: AvailabilityResponseWire): AvailabilityResponse {
+  return {
+    workshop: {
+      ...response.workshop,
+      id: normalizeNonNegativeInteger(response.workshop.id),
+    },
+    availability: response.availability.map((slot) => ({
+      ...slot,
+      slotId: normalizeNonNegativeInteger(slot.slotId),
+      categoryId: normalizeNonNegativeInteger(slot.categoryId),
+      volunteers: normalizeNonNegativeInteger(slot.volunteers),
+      capacity: normalizeNonNegativeInteger(slot.capacity),
+      reserved: normalizeNonNegativeInteger(slot.reserved),
+      remaining: normalizeNonNegativeInteger(slot.remaining),
+    })),
+  }
+}
+
+/**
+ * Normalizes numeric fields returned after a reservation is created.
+ *
+ * @param response - Raw reservation response received from the API.
+ * @returns Reservation data with a numeric identifier.
+ */
+function normalizeCreateReservationResponse(
+  response: CreateReservationResponseWire,
+): CreateReservationResponse {
+  return {
+    ...response,
+    reservation: {
+      ...response.reservation,
+      id: normalizeNonNegativeInteger(response.reservation.id),
+    },
+  }
 }
 
 async function requestJson<T>(path: string, init: RequestInit = {}): Promise<T> {
@@ -192,8 +284,12 @@ async function requestJson<T>(path: string, init: RequestInit = {}): Promise<T> 
  *
  * @param workshopId - Positive workshop identifier used by the API.
  */
-export function getAvailability(workshopId: number): Promise<AvailabilityResponse> {
-  return requestJson<AvailabilityResponse>('/api/workshops/' + workshopId + '/availability')
+export async function getAvailability(workshopId: number): Promise<AvailabilityResponse> {
+  const response = await requestJson<AvailabilityResponseWire>(
+    '/api/workshops/' + workshopId + '/availability',
+  )
+
+  return normalizeAvailabilityResponse(response)
 }
 
 /**
@@ -201,11 +297,13 @@ export function getAvailability(workshopId: number): Promise<AvailabilityRespons
  *
  * @param payload - Reservation data collected by the participant flow.
  */
-export function createReservation(
+export async function createReservation(
   payload: CreateReservationPayload,
 ): Promise<CreateReservationResponse> {
-  return requestJson<CreateReservationResponse>('/api/reservations', {
+  const response = await requestJson<CreateReservationResponseWire>('/api/reservations', {
     method: 'POST',
     body: JSON.stringify(payload),
   })
+
+  return normalizeCreateReservationResponse(response)
 }
