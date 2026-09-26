@@ -64,7 +64,7 @@ defineEmits<{
 }
 
 .category-card:focus-visible {
-  outline: 3px solid #86efac;
+  outline: 3px solid var(--color-primary);
   outline-offset: 3px;
 }
 

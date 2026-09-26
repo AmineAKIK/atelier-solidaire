@@ -9,3 +9,7 @@ apps/api/dist/
 
 # Database backups may contain personal data
 database/backups/
+
+# Production deployment secrets and backups
+deploy/.env
+deploy/backups/

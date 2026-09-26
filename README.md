@@ -70,8 +70,11 @@ Le dépôt sépare le Front, l'API Backend, la base transactionnelle PostgreSQL 
 │   ├── mongo/init/     # Initialisation du journal MongoDB
 │   ├── scripts/        # Sauvegarde, restauration et base de test
 │   └── docs/           # Documentation du modèle de données
+├── deploy/            # Compose et configuration de production
+├── scripts/            # Déploiement reproductible
 └── docs/
     ├── adr/            # Architecture Decision Records
+    ├── deployment.md   # Procédure de déploiement Docker
     └── production-exploitation.md
 ```
 
@@ -254,6 +257,22 @@ npm run preview -- --host 127.0.0.1 --port 4173
 
 Le build Vite est généré dans `dist/`.
 
+## Déploiement Docker
+
+La pile de production est définie dans `deploy/compose.prod.yml`. Seul nginx publie un port sur l'hôte ; PostgreSQL, MongoDB et l'API restent sur le réseau Docker interne.
+
+Préparer les secrets puis lancer le déploiement depuis la racine :
+
+```sh
+cp deploy/.env.example deploy/.env
+# Remplacer les valeurs d'exemple par des secrets réels.
+./scripts/deploy.sh
+```
+
+Le script est relançable : lors d'une mise à jour, il sauvegarde PostgreSQL au format custom dans `deploy/backups/`, construit les images, applique les migrations de production 001 à 004, configure le rôle PostgreSQL `atelier_app`, démarre l'application et exécute les tests de fumée.
+
+La procédure complète, le retour arrière, les règles de sécurité et la veille de versions sont documentés dans [docs/deployment.md](docs/deployment.md).
+
 ## Qualité et tests
 
 ### Front
@@ -291,6 +310,7 @@ npm test
 
 ## Documentation
 
+- [Déploiement Docker](docs/deployment.md)
 - [Contrat OpenAPI 3.1](docs/api/openapi.yaml)
 - [Préparation à la mise en production et exploitation](docs/production-exploitation.md)
 - [Architecture Decision Records](docs/adr/)
@@ -322,6 +342,9 @@ npm test
 - verrou PostgreSQL pour sérialiser les réservations concurrentes sur un même créneau/catégorie ;
 - journal MongoDB sans données personnelles avec rétention TTL de 180 jours ;
 - configuration CORS stricte via `FRONTEND_ORIGIN` et en-têtes de sécurité Helmet ;
+- images Docker multi-stage pour l'API et le Front, nginx reverse proxy et pile Compose de production ;
+- migrations de production suivies dans `schema_migrations` et rôle PostgreSQL `atelier_app` à privilèges limités ;
+- CI GitHub Actions et veille hebdomadaire Dependabot ;
 - documentation de préparation à la production ;
 - ADR documentant le choix de la stack Front.
 
@@ -330,5 +353,5 @@ npm test
 D'après le code et la documentation actuellement versionnés :
 
 - l'application complète n'est pas encore déployée publiquement ;
-- HTTPS, la supervision, l'automatisation et l'externalisation des sauvegardes, ainsi que le redémarrage automatique restent à mettre en œuvre pour un déploiement réel ;
+- HTTPS public avec certificat Let's Encrypt, la supervision et l'externalisation automatisée des sauvegardes restent à mettre en œuvre pour un déploiement réel ;
 - les interfaces dédiées aux bénévoles et à la coordination ne sont pas présentes dans les vues Front actuelles.
