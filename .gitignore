@@ -1,4 +1,3 @@
-
 # Backend environment
 apps/api/.env
 
@@ -7,3 +6,6 @@ node_modules/
 
 # Build artifacts
 apps/api/dist/
+
+# Database backups may contain personal data
+database/backups/

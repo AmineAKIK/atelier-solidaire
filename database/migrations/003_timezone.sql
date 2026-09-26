@@ -1,8 +1,14 @@
--- Atelier Solidaire utilise l'heure locale d'Angers.
--- Les TIMESTAMPTZ restent des instants absolus ;
--- ce réglage définit leur représentation par défaut.
+-- Atelier Solidaire uses the local timezone for Angers.
+-- TIMESTAMPTZ values remain absolute instants; this setting controls their default display timezone.
 
-ALTER DATABASE atelier_solidaire
-SET timezone TO 'Europe/Paris';
+DO $$
+BEGIN
+    EXECUTE format(
+        'ALTER DATABASE %I SET timezone TO %L',
+        current_database(),
+        'Europe/Paris'
+    );
+END
+$$;
 
 SET TIME ZONE 'Europe/Paris';

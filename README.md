@@ -41,6 +41,7 @@ Le dépôt sépare le Front, l'API Backend et la base de données PostgreSQL.
 - migrations SQL versionnées
 - données de démonstration
 - Docker Compose
+- scripts de sauvegarde, restauration et création d'une base de test
 
 ### Outillage
 
@@ -62,6 +63,7 @@ Le dépôt sépare le Front, l'API Backend et la base de données PostgreSQL.
 ├── database/
 │   ├── compose.yml     # PostgreSQL local
 │   ├── migrations/     # Migrations SQL et données de démonstration
+│   ├── scripts/        # Sauvegarde, restauration et base de test
 │   └── docs/           # Documentation du modèle de données
 └── docs/
     ├── adr/            # Architecture Decision Records
@@ -123,7 +125,33 @@ docker compose -f database/compose.yml exec -T postgres psql -U atelier -d ateli
 docker compose -f database/compose.yml exec -T postgres psql -U atelier -d atelier_solidaire < database/migrations/002_seed.sql
 docker compose -f database/compose.yml exec -T postgres psql -U atelier -d atelier_solidaire < database/migrations/003_timezone.sql
 docker compose -f database/compose.yml exec -T postgres psql -U atelier -d atelier_solidaire < database/migrations/004_backend_demo.sql
+docker compose -f database/compose.yml exec -T postgres psql -U atelier -d atelier_solidaire < database/migrations/005_test_scenarios.sql
 ```
+
+#### Scripts de base de données
+
+Les scripts suivants doivent être lancés depuis la racine du dépôt.
+
+Créer une sauvegarde PostgreSQL au format custom dans `database/backups/` :
+
+```sh
+./database/scripts/backup.sh
+```
+
+Restaurer un dump dans `atelier_solidaire_restore`, ou dans une base cible fournie en second argument :
+
+```sh
+./database/scripts/restore.sh database/backups/atelier_solidaire_AAAAMMJJ-HHMM.dump
+./database/scripts/restore.sh database/backups/atelier_solidaire_AAAAMMJJ-HHMM.dump autre_base
+```
+
+Recréer `atelier_solidaire_test` et y appliquer les migrations 001 à 005 :
+
+```sh
+./database/scripts/create-test-db.sh
+```
+
+Le répertoire `database/backups/` est ignoré par Git car les dumps peuvent contenir des données personnelles.
 
 ### API
 
@@ -254,6 +282,7 @@ Aucun script `lint` n'est défini dans `apps/api/package.json`.
 - état de réservation partagé côté Front avec Pinia ;
 - schéma PostgreSQL pour les ateliers, créneaux, catégories, bénévoles, affectations, réservations et demandes de préqualification ;
 - migrations SQL et données de démonstration ;
+- scripts locaux de sauvegarde, restauration et création d'une base de test PostgreSQL ;
 - API Express avec :
   - `GET /api/health` ;
   - `GET /api/workshops/:id/availability` ;
@@ -269,5 +298,5 @@ Aucun script `lint` n'est défini dans `apps/api/package.json`.
 D'après le code et la documentation actuellement versionnés :
 
 - l'application complète n'est pas encore déployée publiquement ;
-- HTTPS, la supervision, les sauvegardes et le redémarrage automatique restent à mettre en œuvre pour un déploiement réel ;
+- HTTPS, la supervision, l'automatisation et l'externalisation des sauvegardes, ainsi que le redémarrage automatique restent à mettre en œuvre pour un déploiement réel ;
 - les interfaces dédiées aux bénévoles et à la coordination ne sont pas présentes dans les vues Front actuelles.
