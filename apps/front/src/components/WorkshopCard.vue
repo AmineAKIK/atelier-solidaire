@@ -2,27 +2,41 @@
   <article class="workshop-card">
     <p class="eyebrow">PROCHAIN ATELIER</p>
 
-    <h3>samedi 12 septembre 2026</h3>
+    <h3>{{ title }}</h3>
 
-    <p class="meta">09:00 — 12:00</p>
-    <p class="meta">Maison de quartier des Hauts-de-Saint-Aubin — Angers</p>
+    <p class="meta">{{ date }}</p>
+    <p class="meta">{{ timeRange }}</p>
+    <p class="meta">{{ location }}</p>
 
     <div class="categories">
       <p>Catégories proposées</p>
 
       <div class="tags">
-        <span>Informatique</span>
-        <span>Petit électroménager</span>
-        <span>Couture &amp; textile</span>
+        <span v-for="category in categories" :key="category">{{ category }}</span>
       </div>
     </div>
 
-    <AppButton to="/ateliers/12-septembre-2026"> Voir l'atelier </AppButton>
+    <AppButton to="/atelier"> Voir l'atelier </AppButton>
   </article>
 </template>
 
 <script setup lang="ts">
 import AppButton from './ui/AppButton.vue'
+
+interface WorkshopCardProps {
+  /** Workshop title returned by the API. */
+  title: string
+  /** Workshop date formatted for the French locale. */
+  date: string
+  /** Workshop start and end times formatted for the French locale. */
+  timeRange: string
+  /** Human-readable workshop location returned by the API. */
+  location: string
+  /** Category names available for the workshop. */
+  categories: string[]
+}
+
+defineProps<WorkshopCardProps>()
 </script>
 
 <style scoped>
