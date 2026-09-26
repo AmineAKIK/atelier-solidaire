@@ -3,13 +3,13 @@
     <AppHeader />
 
     <main class="page-content reservation-page">
-      <RouterLink to="/ateliers/12-septembre-2026" class="back-link">
-        ← Retour à l'atelier
-      </RouterLink>
+      <RouterLink to="/atelier" class="back-link"> ← Retour à l'atelier </RouterLink>
 
       <h1>Choisissez votre heure d'arrivée</h1>
 
-      <p class="workshop-name">Atelier du samedi 12 septembre 2026</p>
+      <p v-if="reservation.workshop" class="workshop-name">
+        {{ reservation.workshop.title }} — {{ reservation.workshopDate }}
+      </p>
 
       <div class="category-selection">
         <span class="category-label">Catégorie sélectionnée</span>
@@ -19,7 +19,7 @@
             {{ reservation.categoryLabel }}
           </span>
 
-          <RouterLink to="/ateliers/12-septembre-2026" class="modify-link"> Modifier </RouterLink>
+          <RouterLink to="/atelier" class="modify-link"> Modifier </RouterLink>
         </div>
       </div>
 
@@ -28,36 +28,67 @@
         l'intervention peut varier selon le diagnostic et les bénévoles disponibles.
       </InfoCallout>
 
-      <section class="slots-section">
+      <section
+        v-if="reservation.category === 'autre'"
+        class="slots-section"
+        role="alert"
+      >
+        <h2>Préqualification nécessaire</h2>
+        <p>
+          Votre demande doit d'abord être vérifiée par l'association avant qu'un créneau puisse
+          être réservé.
+        </p>
+        <RouterLink to="/atelier" class="modify-link">Modifier la catégorie</RouterLink>
+      </section>
+
+      <section
+        v-else
+        class="slots-section"
+        :aria-busy="reservation.availabilityLoading"
+      >
         <h2>Heures disponibles</h2>
 
         <p class="intro">Choisissez l'heure à laquelle vous souhaitez arriver à l'atelier.</p>
 
-        <div class="slots">
-          <TimeSlotCard
-            time="09:00"
-            :selected="reservation.arrivalTime === '09:00'"
-            @select="reservation.arrivalTime = '09:00'"
-          />
+        <p v-if="reservation.availabilityLoading">Chargement des créneaux…</p>
 
-          <TimeSlotCard
-            time="10:00"
-            :selected="reservation.arrivalTime === '10:00'"
-            @select="reservation.arrivalTime = '10:00'"
-          />
-
-          <TimeSlotCard time="11:00" status="full" />
+        <div v-else-if="reservation.availabilityError" class="error-state" role="alert">
+          <p>{{ reservation.availabilityError }}</p>
+          <button type="button" class="retry-button" @click="retryAvailability">Réessayer</button>
         </div>
 
-        <AppButton to="/reservation/informations"> Continuer </AppButton>
+        <template v-else>
+          <div v-if="reservation.categorySlots.length" class="slots">
+            <TimeSlotCard
+              v-for="slot in reservation.categorySlots"
+              :key="slot.slotId"
+              :time="slot.localTime"
+              :status="slot.remaining === 0 ? 'full' : 'available'"
+              :selected="reservation.selectedSlotId === slot.slotId"
+              @select="reservation.selectSlot(slot.slotId)"
+            />
+          </div>
 
-        <p class="next-step">Prochaine étape : vos informations</p>
+          <p v-else class="empty-state">Aucun créneau n'est disponible pour cette catégorie.</p>
+
+          <AppButton
+            to="/reservation/informations"
+            :disabled="!reservation.canContinueToParticipant"
+          >
+            Continuer
+          </AppButton>
+
+          <p class="next-step">Prochaine étape : vos informations</p>
+        </template>
       </section>
     </main>
   </div>
 </template>
 
 <script setup lang="ts">
+import { onMounted } from 'vue'
+import { RouterLink } from 'vue-router'
+
 import AppHeader from '../components/AppHeader.vue'
 import InfoCallout from '../components/InfoCallout.vue'
 import TimeSlotCard from '../components/TimeSlotCard.vue'
@@ -65,6 +96,14 @@ import AppButton from '../components/ui/AppButton.vue'
 import { useReservationStore } from '../stores/reservation'
 
 const reservation = useReservationStore()
+
+onMounted(() => {
+  void reservation.loadAvailability(true)
+})
+
+function retryAvailability() {
+  void reservation.loadAvailability(true)
+}
 </script>
 
 <style scoped>
@@ -126,6 +165,7 @@ h1 {
 .modify-link {
   color: #1d4ed8;
   font-size: 14px;
+  text-decoration: underline;
 }
 
 .info {
@@ -154,7 +194,29 @@ h2 {
   margin-bottom: 32px;
 
   display: flex;
+  flex-wrap: wrap;
   gap: 24px;
+}
+
+.error-state p {
+  margin: 0 0 12px;
+}
+
+.retry-button {
+  min-height: 42px;
+  margin-bottom: 24px;
+  padding: 0 18px;
+
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+
+  background: white;
+  color: #111827;
+}
+
+.empty-state {
+  margin-bottom: 24px;
+  color: #4b5563;
 }
 
 .next-step {
