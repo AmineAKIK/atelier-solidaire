@@ -1,0 +1,55 @@
+name: API layered verification
+
+on:
+  push:
+    branches:
+      - feat/api-layers-mongodb-tests
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify API
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch feat/api-layers-mongodb-tests https://github.com/AmineAKIK/atelier-solidaire.git atelier-solidaire
+          cd atelier-solidaire
+
+          docker compose -f database/compose.yml up -d
+
+          for attempt in $(seq 1 60); do
+            pg_ok=0
+            mongo_ok=0
+
+            docker compose -f database/compose.yml exec -T postgres pg_isready -U atelier -d atelier_solidaire >/dev/null 2>&1 && pg_ok=1
+            docker compose -f database/compose.yml exec -T mongo mongosh --quiet --username root --password atelier_mongo_root_dev --authenticationDatabase admin --eval "db.adminCommand('ping').ok" >/dev/null 2>&1 && mongo_ok=1
+
+            if [[ "$pg_ok" -eq 1 && "$mongo_ok" -eq 1 ]]; then
+              break
+            fi
+
+            if [[ "$attempt" -eq 60 ]]; then
+              docker compose -f database/compose.yml ps
+              docker compose -f database/compose.yml logs mongo
+              exit 1
+            fi
+
+            sleep 1
+          done
+
+          ./database/scripts/create-test-db.sh
+
+          cd apps/api
+          npm install
+
+          export DATABASE_URL=postgresql://atelier:atelier_dev@127.0.0.1:5433/atelier_solidaire_test
+          export FRONTEND_ORIGIN=http://localhost:5173
+          export MONGODB_URL='mongodb://atelier_logs:atelier_logs_dev@127.0.0.1:27017/atelier_solidaire_logs_test?authSource=admin'
+          export ADMIN_API_TOKEN=0123456789abcdef0123456789abcdef
+          export PORT=3000
+
+          npm run lint
+          npm run type-check
+          npm run test:unit
+          npm run test:integration
