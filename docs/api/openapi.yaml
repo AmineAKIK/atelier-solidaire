@@ -1,0 +1,525 @@
+openapi: 3.1.0
+info:
+  title: Atelier Solidaire API
+  version: 1.0.0
+  description: |
+    HTTP API for workshop availability, reservation creation, health checks,
+    and privacy-minimal reservation-attempt statistics.
+servers:
+  - url: http://localhost:3000
+paths:
+  /api/health:
+    get:
+      summary: Check PostgreSQL and MongoDB health
+      operationId: getHealth
+      responses:
+        '200':
+          description: PostgreSQL is available. MongoDB may be available or unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+        '500':
+          description: PostgreSQL is unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatabaseUnavailableError'
+  /api/workshops/{id}/availability:
+    get:
+      summary: Get workshop availability
+      operationId: getWorkshopAvailability
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        '200':
+          description: Workshop and availability rows.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AvailabilityResponse'
+        '400':
+          description: Invalid workshop identifier.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvalidWorkshopIdError'
+        '404':
+          description: Workshop not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkshopNotFoundError'
+        '500':
+          description: Internal server error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalError'
+  /api/reservations:
+    post:
+      summary: Create a reservation
+      operationId: createReservation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateReservationRequest'
+      responses:
+        '201':
+          description: Reservation created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateReservationResponse'
+        '400':
+          description: Validation failure or malformed JSON.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ValidationError'
+                  - $ref: '#/components/schemas/InvalidJsonError'
+        '404':
+          description: Slot/category pair not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SlotCategoryNotFoundError'
+        '409':
+          description: Reservation conflicts with booking rules or capacity.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/BookingUnavailableError'
+                  - $ref: '#/components/schemas/BookingClosedError'
+                  - $ref: '#/components/schemas/CapacityFullError'
+        '413':
+          description: JSON body is larger than 10 kilobytes.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PayloadTooLargeError'
+        '500':
+          description: Internal server error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalError'
+  /api/admin/stats/reservation-attempts:
+    get:
+      summary: Get reservation-attempt statistics for one workshop
+      operationId: getReservationAttemptStats
+      security:
+        - adminBearer: []
+      parameters:
+        - name: workshopId
+          in: query
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        '200':
+          description: Counts grouped by outcome and reason.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ReservationAttemptStat'
+        '400':
+          description: Invalid workshop identifier.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvalidWorkshopIdError'
+        '401':
+          description: Missing or invalid administrator bearer token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnauthorizedError'
+        '500':
+          description: Internal server error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalError'
+components:
+  securitySchemes:
+    adminBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque
+  schemas:
+    HealthResponse:
+      type: object
+      required:
+        - status
+        - database
+        - timezone
+        - now
+        - postgresql
+        - mongodb
+      properties:
+        status:
+          const: ok
+        database:
+          type: string
+        timezone:
+          type: string
+        now:
+          type: string
+          format: date-time
+        postgresql:
+          type: object
+          required:
+            - status
+            - database
+            - timezone
+            - now
+          properties:
+            status:
+              const: ok
+            database:
+              type: string
+            timezone:
+              type: string
+            now:
+              type: string
+              format: date-time
+        mongodb:
+          type: object
+          required:
+            - status
+          properties:
+            status:
+              type: string
+              enum:
+                - ok
+                - unavailable
+    DatabaseUnavailableError:
+      type: object
+      required:
+        - status
+        - code
+        - postgresql
+        - mongodb
+      properties:
+        status:
+          const: error
+        code:
+          const: database_unavailable
+        postgresql:
+          type: object
+          required:
+            - status
+          properties:
+            status:
+              const: unavailable
+        mongodb:
+          type: object
+          required:
+            - status
+          properties:
+            status:
+              type: string
+              enum:
+                - ok
+                - unavailable
+    Workshop:
+      type: object
+      required:
+        - id
+        - title
+        - startsAt
+        - endsAt
+        - bookingClosesAt
+        - locationName
+        - city
+        - bookingOpen
+      properties:
+        id:
+          type: string
+          pattern: '^[0-9]+$'
+          description: PostgreSQL BIGINT serialized by node-postgres.
+        title:
+          type: string
+        startsAt:
+          type: string
+          format: date-time
+        endsAt:
+          type: string
+          format: date-time
+        bookingClosesAt:
+          type: string
+          format: date-time
+        locationName:
+          type: string
+        city:
+          type: string
+        bookingOpen:
+          type: boolean
+    AvailabilityRow:
+      type: object
+      required:
+        - slotId
+        - arrivalAt
+        - localTime
+        - categoryId
+        - categoryCode
+        - categoryName
+        - volunteers
+        - capacity
+        - reserved
+        - remaining
+      properties:
+        slotId:
+          type: string
+          pattern: '^[0-9]+$'
+          description: PostgreSQL BIGINT serialized by node-postgres.
+        arrivalAt:
+          type: string
+          format: date-time
+        localTime:
+          type: string
+          pattern: '^[0-9]{2}:[0-9]{2}$'
+        categoryId:
+          type: integer
+        categoryCode:
+          type: string
+          enum:
+            - IT
+            - PEM
+            - TXT
+        categoryName:
+          type: string
+        volunteers:
+          type: integer
+          minimum: 0
+        capacity:
+          type: integer
+          minimum: 0
+        reserved:
+          type: integer
+          minimum: 0
+        remaining:
+          type: integer
+          minimum: 0
+    AvailabilityResponse:
+      type: object
+      required:
+        - workshop
+        - availability
+      properties:
+        workshop:
+          $ref: '#/components/schemas/Workshop'
+        availability:
+          type: array
+          items:
+            $ref: '#/components/schemas/AvailabilityRow'
+    CreateReservationRequest:
+      type: object
+      required:
+        - slotId
+        - categoryId
+        - firstName
+        - lastName
+        - email
+        - itemName
+        - problemDescription
+      properties:
+        slotId:
+          type: integer
+          minimum: 1
+        categoryId:
+          type: integer
+          minimum: 1
+        firstName:
+          type: string
+          minLength: 1
+          maxLength: 80
+        lastName:
+          type: string
+          minLength: 1
+          maxLength: 80
+        email:
+          type: string
+          format: email
+          maxLength: 255
+        itemName:
+          type: string
+          minLength: 1
+          maxLength: 160
+        problemDescription:
+          type: string
+          minLength: 1
+          maxLength: 2000
+    Reservation:
+      type: object
+      required:
+        - id
+        - publicToken
+        - status
+        - createdAt
+      properties:
+        id:
+          type: string
+          pattern: '^[0-9]+$'
+          description: PostgreSQL BIGINT serialized by node-postgres.
+        publicToken:
+          type: string
+          format: uuid
+        status:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+    Capacity:
+      type: object
+      required:
+        - total
+        - reserved
+        - remaining
+      properties:
+        total:
+          type: integer
+          minimum: 0
+        reserved:
+          type: integer
+          minimum: 0
+        remaining:
+          type: integer
+          minimum: 0
+    CreateReservationResponse:
+      type: object
+      required:
+        - reservation
+        - capacity
+      properties:
+        reservation:
+          $ref: '#/components/schemas/Reservation'
+        capacity:
+          $ref: '#/components/schemas/Capacity'
+    ReservationAttemptStat:
+      type: object
+      required:
+        - outcome
+        - reason
+        - count
+      properties:
+        outcome:
+          type: string
+          enum:
+            - accepted
+            - refused
+        reason:
+          type: string
+          enum:
+            - created
+            - validation_error
+            - slot_category_not_found
+            - booking_unavailable
+            - booking_closed
+            - capacity_full
+            - internal_error
+        count:
+          type: integer
+          minimum: 0
+    ValidationError:
+      type: object
+      required:
+        - code
+        - errors
+      properties:
+        code:
+          const: validation_error
+        errors:
+          type: object
+          additionalProperties: true
+    InvalidJsonError:
+      type: object
+      required:
+        - code
+      properties:
+        code:
+          const: invalid_json
+    InvalidWorkshopIdError:
+      type: object
+      required:
+        - code
+      properties:
+        code:
+          const: invalid_workshop_id
+    WorkshopNotFoundError:
+      type: object
+      required:
+        - code
+      properties:
+        code:
+          const: workshop_not_found
+    SlotCategoryNotFoundError:
+      type: object
+      required:
+        - code
+      properties:
+        code:
+          const: slot_category_not_found
+    BookingUnavailableError:
+      type: object
+      required:
+        - code
+      properties:
+        code:
+          const: booking_unavailable
+    BookingClosedError:
+      type: object
+      required:
+        - code
+      properties:
+        code:
+          const: booking_closed
+    CapacityFullError:
+      type: object
+      required:
+        - code
+        - capacity
+        - reserved
+      properties:
+        code:
+          const: capacity_full
+        capacity:
+          type: integer
+          minimum: 0
+        reserved:
+          type: integer
+          minimum: 0
+    PayloadTooLargeError:
+      type: object
+      required:
+        - code
+      properties:
+        code:
+          const: payload_too_large
+    UnauthorizedError:
+      type: object
+      required:
+        - code
+      properties:
+        code:
+          const: unauthorized
+    InternalError:
+      type: object
+      required:
+        - code
+      properties:
+        code:
+          const: internal_error
