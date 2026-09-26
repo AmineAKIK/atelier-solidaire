@@ -36,7 +36,15 @@ export interface ReservationRepositoryPort {
   ): Promise<T>
 }
 
+/**
+ * Provides transaction-scoped PostgreSQL operations for reservation creation.
+ */
 class PostgresReservationTransaction implements ReservationTransactionPort {
+  /**
+   * Creates transaction-scoped reservation data access.
+   *
+   * @param client - PostgreSQL client already inside a transaction.
+   */
   public constructor(private readonly client: PoolClient) {}
 
   /**
@@ -45,6 +53,7 @@ class PostgresReservationTransaction implements ReservationTransactionPort {
    * @param slotId - Arrival-slot identifier.
    * @param categoryId - Category identifier.
    * @returns Locked booking context, or null if the pair does not exist.
+   * @throws {Error} When PostgreSQL returns an unsafe workshop identifier.
    */
   public async getBookingContextForUpdate(
     slotId: number,
@@ -96,6 +105,7 @@ class PostgresReservationTransaction implements ReservationTransactionPort {
    * @param slotId - Arrival-slot identifier.
    * @param categoryId - Category identifier.
    * @returns Current capacity and reservation count.
+   * @throws {Error} When PostgreSQL cannot calculate capacity.
    */
   public async getCapacity(
     slotId: number,
@@ -128,6 +138,7 @@ class PostgresReservationTransaction implements ReservationTransactionPort {
    *
    * @param data - Validated reservation data.
    * @returns The inserted reservation row.
+   * @throws {Error} When PostgreSQL cannot insert the reservation.
    */
   public async insertReservation(
     data: CreateReservationCommand,
