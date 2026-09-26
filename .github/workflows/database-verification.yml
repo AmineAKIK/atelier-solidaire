@@ -1,0 +1,106 @@
+name: Database verification
+
+on:
+  push:
+    branches:
+      - feat/database-backup-tests
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify database migrations and backup scripts
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch feat/database-backup-tests https://github.com/AmineAKIK/atelier-solidaire.git atelier-solidaire
+          cd atelier-solidaire
+
+          docker compose -f database/compose.yml up -d
+
+          for attempt in $(seq 1 30); do
+            if docker compose -f database/compose.yml exec -T postgres pg_isready -U atelier -d atelier_solidaire >/dev/null 2>&1; then
+              break
+            fi
+
+            if [[ "$attempt" -eq 30 ]]; then
+              echo "PostgreSQL did not become ready." >&2
+              exit 1
+            fi
+
+            sleep 1
+          done
+
+          migrations=(
+            database/migrations/001_schema.sql
+            database/migrations/002_seed.sql
+            database/migrations/003_timezone.sql
+            database/migrations/004_backend_demo.sql
+            database/migrations/005_test_scenarios.sql
+          )
+
+          echo "=== Fresh database migrations ==="
+          for migration in "${migrations[@]}"; do
+            echo "Applying $migration"
+            docker compose -f database/compose.yml exec -T postgres psql \
+              -v ON_ERROR_STOP=1 \
+              -U atelier \
+              -d atelier_solidaire < "$migration"
+          done
+
+          echo "=== Idempotence check for migration 005 ==="
+          docker compose -f database/compose.yml exec -T postgres psql \
+            -v ON_ERROR_STOP=1 \
+            -U atelier \
+            -d atelier_solidaire < database/migrations/005_test_scenarios.sql
+
+          scenario_future_count="$(docker compose -f database/compose.yml exec -T postgres psql \
+            -U atelier \
+            -d atelier_solidaire \
+            -Atc "SELECT COUNT(*) FROM reservations r JOIN arrival_slots s ON s.id = r.slot_id WHERE s.workshop_id = 2 AND r.email LIKE 'scenario.%@example.test';")"
+          echo "Scenario reservations on workshop id 2: $scenario_future_count"
+          test "$scenario_future_count" = "0"
+
+          tables=(
+            categories
+            workshops
+            arrival_slots
+            slot_categories
+            volunteers
+            volunteer_skills
+            volunteer_slot_assignments
+            reservations
+            prequalification_requests
+          )
+
+          echo "=== Original row counts ==="
+          declare -A original_counts
+          for table in "${tables[@]}"; do
+            count="$(docker compose -f database/compose.yml exec -T postgres psql -U atelier -d atelier_solidaire -Atc "SELECT COUNT(*) FROM \"$table\";")"
+            original_counts["$table"]="$count"
+            echo "$table: $count"
+          done
+
+          echo "=== Backup ==="
+          ./database/scripts/backup.sh
+          dump_file="$(find database/backups -maxdepth 1 -type f -name 'atelier_solidaire_*.dump' | sort | tail -n 1)"
+          test -n "$dump_file"
+          test -s "$dump_file"
+
+          echo "=== Restore ==="
+          ./database/scripts/restore.sh "$dump_file" atelier_solidaire_restore
+
+          echo "=== Restored row count comparison ==="
+          for table in "${tables[@]}"; do
+            restored_count="$(docker compose -f database/compose.yml exec -T postgres psql -U atelier -d atelier_solidaire_restore -Atc "SELECT COUNT(*) FROM \"$table\";")"
+            echo "$table: original=${original_counts[$table]} restored=$restored_count"
+            test "${original_counts[$table]}" = "$restored_count"
+          done
+
+          echo "=== create-test-db.sh ==="
+          ./database/scripts/create-test-db.sh
+
+          echo "=== Test database timezone ==="
+          test_timezone="$(docker compose -f database/compose.yml exec -T postgres psql -U atelier -d atelier_solidaire_test -Atc "SHOW timezone;")"
+          echo "atelier_solidaire_test timezone: $test_timezone"
+          test "$test_timezone" = "Europe/Paris"
