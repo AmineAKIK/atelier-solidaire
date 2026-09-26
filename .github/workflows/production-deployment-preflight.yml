@@ -1,0 +1,160 @@
+name: Production deployment preflight
+
+on:
+  push:
+    branches:
+      - feat/production-deployment
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: |
+            apps/api/package-lock.json
+            apps/front/package-lock.json
+
+      - name: Prepare production environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            echo "POSTGRES_ADMIN_PASSWORD=$(openssl rand -hex 32)"
+            echo "POSTGRES_APP_PASSWORD=$(openssl rand -hex 32)"
+            echo "MONGO_ADMIN_PASSWORD=$(openssl rand -hex 32)"
+            echo "MONGO_APP_PASSWORD=$(openssl rand -hex 32)"
+            echo "ADMIN_API_TOKEN=$(openssl rand -hex 32)"
+            echo "FRONTEND_ORIGIN=http://127.0.0.1:8080"
+            echo "VITE_WORKSHOP_ID=2"
+          } > deploy/.env
+
+          docker compose --project-name atelier-solidaire-prod --env-file deploy/.env -f deploy/compose.prod.yml down -v --remove-orphans || true
+          rm -rf deploy/backups
+
+      - name: First production deployment
+        run: ./scripts/deploy.sh | tee /tmp/deploy-first.log
+
+      - name: Second production deployment
+        run: ./scripts/deploy.sh | tee /tmp/deploy-second.log
+
+      - name: Verify backup and least-privilege role
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -a
+          source deploy/.env
+          set +a
+
+          backup_count="$(find deploy/backups -maxdepth 1 -type f -name 'atelier_solidaire_*.dump' -size +0c | wc -l)"
+          test "$backup_count" -ge 1
+          echo "Second deployment backup files: $backup_count"
+
+          set +e
+          docker compose             --project-name atelier-solidaire-prod             --env-file deploy/.env             -f deploy/compose.prod.yml             exec -T             -e PGPASSWORD="$POSTGRES_APP_PASSWORD"             postgres             psql -v ON_ERROR_STOP=1 -U atelier_app -d atelier_solidaire             -c "DROP TABLE reservations;" > /tmp/drop-table.log 2>&1
+          drop_status=$?
+          set -e
+
+          cat /tmp/drop-table.log
+          test "$drop_status" -ne 0
+          docker compose             --project-name atelier-solidaire-prod             --env-file deploy/.env             -f deploy/compose.prod.yml             exec -T postgres             psql -U atelier_admin -d atelier_solidaire -Atc "SELECT to_regclass('public.reservations');"             | grep -qx "reservations"
+          echo "atelier_app DROP TABLE check: permission denied as expected"
+
+      - name: Verify reservation through nginx and rate limiting
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          curl -fsS http://127.0.0.1:8080/api/workshops/2/availability > /tmp/availability.json
+
+          read -r slot_id category_id < <(
+            python3 - <<'PY'
+          import json
+          with open('/tmp/availability.json', encoding='utf-8') as handle:
+              data = json.load(handle)
+          row = next(item for item in data['availability'] if item['remaining'] > 0)
+          print(row['slotId'], row['categoryId'])
+          PY
+          )
+
+          payload="$(python3 - "$slot_id" "$category_id" <<'PY'
+          import json
+          import sys
+          print(json.dumps({
+              "slotId": int(sys.argv[1]),
+              "categoryId": int(sys.argv[2]),
+              "firstName": "Production",
+              "lastName": "Smoke",
+              "email": "production-smoke@example.test",
+              "itemName": "Laptop",
+              "problemDescription": "Production deployment smoke test",
+          }))
+          PY
+          )"
+
+          status="$(curl -sS -o /tmp/reservation.json -w '%{http_code}'             -H 'Content-Type: application/json'             -H 'Origin: http://127.0.0.1:8080'             --data "$payload"             http://127.0.0.1:8080/api/reservations)"
+
+          cat /tmp/reservation.json
+          test "$status" = "201"
+          echo "Reservation through nginx: HTTP $status"
+
+          rm -f /tmp/rate-*.code
+          for index in $(seq 1 30); do
+            (
+              curl -sS -o /dev/null -w '%{http_code}\n'                 -H 'Content-Type: application/json'                 -H 'Origin: http://127.0.0.1:8080'                 --data "$payload"                 http://127.0.0.1:8080/api/reservations                 > "/tmp/rate-$index.code"
+            ) &
+          done
+          wait
+
+          cat /tmp/rate-*.code | sort | uniq -c
+          cat /tmp/rate-*.code | grep -qx "429"
+          echo "Repeated reservation POSTs reached HTTP 429"
+
+      - name: Verify unchanged API tests
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          docker compose -f database/compose.yml down -v --remove-orphans || true
+          docker compose -f database/compose.yml up -d
+
+          for attempt in $(seq 1 60); do
+            pg_ok=0
+            mongo_ok=0
+            docker compose -f database/compose.yml exec -T postgres pg_isready -U atelier -d atelier_solidaire >/dev/null 2>&1 && pg_ok=1
+            docker compose -f database/compose.yml exec -T mongo mongosh --quiet --username root --password atelier_mongo_root_dev --authenticationDatabase admin --eval "db.adminCommand('ping').ok" >/dev/null 2>&1 && mongo_ok=1
+            if [[ "$pg_ok" -eq 1 && "$mongo_ok" -eq 1 ]]; then
+              break
+            fi
+            if [[ "$attempt" -eq 60 ]]; then
+              exit 1
+            fi
+            sleep 1
+          done
+
+          ./database/scripts/create-test-db.sh
+
+          cd apps/api
+          npm ci
+          export DATABASE_URL=postgresql://atelier:atelier_dev@127.0.0.1:5433/atelier_solidaire_test
+          export FRONTEND_ORIGIN=http://localhost:5173
+          export MONGODB_URL='mongodb://atelier_logs:atelier_logs_dev@127.0.0.1:27017/atelier_solidaire_logs_test?authSource=admin'
+          export ADMIN_API_TOKEN="$(openssl rand -hex 32)"
+          export PORT=3000
+
+          npm run lint
+          npm run type-check
+          npm test | tee /tmp/api-tests.log
+          grep -q '15 passed' /tmp/api-tests.log
+          grep -q '10 passed' /tmp/api-tests.log
+          echo "API tests unchanged: 25 passed"
+
+      - name: Verify Front tests and type-check
+        working-directory: apps/front
+        run: |
+          npm ci
+          npm run test:unit -- --run
+          npm run type-check
