@@ -79,6 +79,7 @@ services:
       context: ../apps/front
       dockerfile: Dockerfile
       args:
+        VITE_API_URL: ${FRONTEND_ORIGIN}
         VITE_WORKSHOP_ID: ${VITE_WORKSHOP_ID}
     depends_on:
       api:
