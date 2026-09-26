@@ -320,12 +320,7 @@ describe('API integration', () => {
         'CREATE OR REPLACE FUNCTION test_delay_reservation_insert()',
         'RETURNS trigger',
         'LANGUAGE plpgsql',
-        'AS $',
-        'BEGIN',
-        '  PERFORM pg_sleep(0.1);',
-        '  RETURN NEW;',
-        'END',
-        '$',
+        "AS 'BEGIN PERFORM pg_sleep(0.1); RETURN NEW; END';",
       ].join('\n'),
     )
     await pool.query(
