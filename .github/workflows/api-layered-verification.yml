@@ -5,11 +5,16 @@ on:
     branches:
       - feat/api-layers-mongodb-tests
 
+permissions:
+  contents: write
+
 jobs:
   verify:
     runs-on: ubuntu-latest
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
-      - name: Verify API
+      - name: Verify API and concurrency lock
         shell: bash
         run: |
           set -euo pipefail
@@ -21,7 +26,6 @@ jobs:
           for attempt in $(seq 1 60); do
             pg_ok=0
             mongo_ok=0
-
             docker compose -f database/compose.yml exec -T postgres pg_isready -U atelier -d atelier_solidaire >/dev/null 2>&1 && pg_ok=1
             docker compose -f database/compose.yml exec -T mongo mongosh --quiet --username root --password atelier_mongo_root_dev --authenticationDatabase admin --eval "db.adminCommand('ping').ok" >/dev/null 2>&1 && mongo_ok=1
 
@@ -31,7 +35,6 @@ jobs:
 
             if [[ "$attempt" -eq 60 ]]; then
               docker compose -f database/compose.yml ps
-              docker compose -f database/compose.yml logs mongo
               exit 1
             fi
 
@@ -53,3 +56,36 @@ jobs:
           npm run type-check
           npm run test:unit
           npm run test:integration
+
+          echo "=== Concurrency regression without FOR UPDATE OF sc ==="
+          cp src/repositories/reservation-repository.ts /tmp/reservation-repository.ts
+          sed -i '/FOR UPDATE OF sc/d' src/repositories/reservation-repository.ts
+
+          set +e
+          npx vitest --run --reporter=verbose src/__tests__/integration/api.integration.spec.ts -t "allows exactly one of ten concurrent reservations for capacity one"
+          no_lock_status=$?
+          set -e
+
+          cp /tmp/reservation-repository.ts src/repositories/reservation-repository.ts
+
+          if [[ "$no_lock_status" -eq 0 ]]; then
+            echo "Concurrency test unexpectedly passed without FOR UPDATE OF sc." >&2
+            exit 1
+          fi
+
+          echo "Concurrency test failed without FOR UPDATE OF sc as expected (exit $no_lock_status)."
+
+          cd ../..
+          git status --short
+
+          if git diff --quiet -- apps/api/package-lock.json; then
+            echo "package-lock.json already matches package.json."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add apps/api/package-lock.json
+          git commit -m "chore(api): update dependency lockfile"
+          git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/AmineAKIK/atelier-solidaire.git"
+          git push origin HEAD:feat/api-layers-mongodb-tests
