@@ -19,7 +19,8 @@
         <div class="summary-grid">
           <div>
             <span>Atelier</span>
-            <b>samedi 12 septembre 2026</b>
+            <b>{{ reservation.workshop?.title }}</b>
+            <small>{{ reservation.workshopDate }}</small>
           </div>
 
           <div>
@@ -46,10 +47,14 @@
               id="firstName"
               v-model.trim="reservation.participant.firstName"
               type="text"
+              autocomplete="given-name"
+              maxlength="80"
               placeholder="Votre prénom"
+              aria-describedby="firstName-help firstName-error"
               :aria-invalid="Boolean(errors.firstName)"
             />
-            <p v-if="errors.firstName" class="error">
+            <p id="firstName-help" class="help">80 caractères maximum.</p>
+            <p v-if="errors.firstName" id="firstName-error" class="error">
               {{ errors.firstName }}
             </p>
           </div>
@@ -60,10 +65,14 @@
               id="lastName"
               v-model.trim="reservation.participant.lastName"
               type="text"
+              autocomplete="family-name"
+              maxlength="80"
               placeholder="Votre nom"
+              aria-describedby="lastName-help lastName-error"
               :aria-invalid="Boolean(errors.lastName)"
             />
-            <p v-if="errors.lastName" class="error">
+            <p id="lastName-help" class="help">80 caractères maximum.</p>
+            <p v-if="errors.lastName" id="lastName-error" class="error">
               {{ errors.lastName }}
             </p>
           </div>
@@ -76,17 +85,20 @@
             id="email"
             v-model.trim="reservation.participant.email"
             type="email"
+            autocomplete="email"
+            maxlength="255"
             placeholder="exemple@email.fr"
+            aria-describedby="email-help email-error"
             :aria-invalid="Boolean(errors.email)"
           />
 
-          <p v-if="errors.email" class="error">
-            {{ errors.email }}
-          </p>
-
-          <p class="help">
+          <p id="email-help" class="help">
             La confirmation et le lien de gestion de votre réservation seront envoyés à cette
             adresse.
+          </p>
+
+          <p v-if="errors.email" id="email-error" class="error">
+            {{ errors.email }}
           </p>
         </div>
 
@@ -97,31 +109,38 @@
             id="item"
             v-model.trim="reservation.participant.item"
             type="text"
+            maxlength="160"
             placeholder="Ordinateur portable"
+            aria-describedby="item-help item-error"
             :aria-invalid="Boolean(errors.item)"
           />
 
-          <p v-if="errors.item" class="error">
+          <p id="item-help" class="help">160 caractères maximum.</p>
+
+          <p v-if="errors.item" id="item-error" class="error">
             {{ errors.item }}
           </p>
         </div>
 
         <div class="field wide">
-          <label for="problem"> Décrivez brièvement le problème * </label>
+          <label for="problem">Décrivez brièvement le problème *</label>
 
           <textarea
             id="problem"
             v-model.trim="reservation.participant.problem"
+            maxlength="2000"
             placeholder="Exemple : l'ordinateur ne démarre plus depuis une mise à jour."
+            aria-describedby="problem-help problem-error"
             :aria-invalid="Boolean(errors.problem)"
           />
 
-          <p v-if="errors.problem" class="error">
-            {{ errors.problem }}
+          <p id="problem-help" class="help">
+            Décrivez simplement ce que vous observez. Aucun diagnostic technique n'est demandé.
+            2 000 caractères maximum.
           </p>
 
-          <p class="help">
-            Décrivez simplement ce que vous observez. Aucun diagnostic technique n'est demandé.
+          <p v-if="errors.problem" id="problem-error" class="error">
+            {{ errors.problem }}
           </p>
         </div>
 
@@ -147,7 +166,7 @@
 </template>
 
 <script setup lang="ts">
-import { reactive } from 'vue'
+import { nextTick, reactive } from 'vue'
 import { useRouter } from 'vue-router'
 
 import AppHeader from '../components/AppHeader.vue'
@@ -165,7 +184,10 @@ const errors = reactive({
   problem: '',
 })
 
+const fieldOrder = ['firstName', 'lastName', 'email', 'item', 'problem'] as const
+
 function validate() {
+  // Client-side validation improves immediate feedback; the API remains authoritative for booking data.
   errors.firstName = reservation.participant.firstName ? '' : 'Le prénom est obligatoire.'
 
   errors.lastName = reservation.participant.lastName ? '' : 'Le nom est obligatoire.'
@@ -187,10 +209,20 @@ function validate() {
   return !Object.values(errors).some(Boolean)
 }
 
-function submit() {
-  if (!validate()) return
+async function submit() {
+  if (!validate()) {
+    await nextTick()
 
-  router.push('/reservation/verifier')
+    const firstInvalidField = fieldOrder.find((field) => Boolean(errors[field]))
+
+    if (firstInvalidField) {
+      document.getElementById(firstInvalidField)?.focus()
+    }
+
+    return
+  }
+
+  await router.push('/reservation/verifier')
 }
 </script>
 
@@ -248,7 +280,8 @@ h1 {
 }
 
 .summary-grid span,
-.summary-grid b {
+.summary-grid b,
+.summary-grid small {
   display: block;
 
   font-size: 14px;
@@ -262,6 +295,11 @@ h1 {
 
 .summary-grid b {
   font-weight: 500;
+}
+
+.summary-grid small {
+  margin-top: 2px;
+  color: #4b5563;
 }
 
 .modify-link {
