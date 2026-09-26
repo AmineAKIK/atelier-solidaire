@@ -6,7 +6,7 @@ Atelier Solidaire est une application web responsive de réservation et de gesti
 
 Le projet est réalisé dans le cadre d'une formation **DWWM** (Développeur Web et Web Mobile), sous la forme d'une **situation professionnelle simulée** pour une **association fictive**.
 
-Le dépôt sépare le Front, l'API Backend et la base de données PostgreSQL.
+Le dépôt sépare le Front, l'API Backend, la base transactionnelle PostgreSQL et le journal de tentatives MongoDB.
 
 ## Stack technique
 
@@ -29,19 +29,23 @@ Le dépôt sépare le Front, l'API Backend et la base de données PostgreSQL.
 - TypeScript
 - Express 5
 - PostgreSQL via `pg`
+- MongoDB via le driver officiel `mongodb`
 - Zod
 - CORS
+- Helmet
 - dotenv
 - tsx
 - Vitest
+- Supertest
 
 ### Base de données
 
-- PostgreSQL 16
+- PostgreSQL 16 pour les données transactionnelles
+- MongoDB 8 pour le journal anonymisé des tentatives de réservation
 - migrations SQL versionnées
 - données de démonstration
 - Docker Compose
-- scripts de sauvegarde, restauration et création d'une base de test
+- scripts de sauvegarde, restauration et création d'une base de test PostgreSQL
 
 ### Outillage
 
@@ -61,8 +65,9 @@ Le dépôt sépare le Front, l'API Backend et la base de données PostgreSQL.
 │   ├── front/          # Application Vue
 │   └── api/            # API Express / TypeScript
 ├── database/
-│   ├── compose.yml     # PostgreSQL local
+│   ├── compose.yml     # PostgreSQL et MongoDB locaux
 │   ├── migrations/     # Migrations SQL et données de démonstration
+│   ├── mongo/init/     # Initialisation du journal MongoDB
 │   ├── scripts/        # Sauvegarde, restauration et base de test
 │   └── docs/           # Documentation du modèle de données
 └── docs/
@@ -101,9 +106,9 @@ npm install
 
 ## Lancement
 
-### Base PostgreSQL
+### Bases de données
 
-Le service PostgreSQL est défini dans `database/compose.yml`.
+Les services PostgreSQL et MongoDB sont définis dans `database/compose.yml`. Les ports locaux sont publiés uniquement sur l'interface de boucle locale.
 
 Depuis la racine du dépôt :
 
@@ -111,12 +116,14 @@ Depuis la racine du dépôt :
 docker compose -f database/compose.yml up -d
 ```
 
-La configuration fournie utilise :
+La configuration PostgreSQL fournie utilise :
 
 - base : `atelier_solidaire` ;
 - utilisateur : `atelier` ;
 - mot de passe de développement : `atelier_dev` ;
-- port exposé sur l'hôte : `5433`.
+- port local : `127.0.0.1:5433`.
+
+MongoDB écoute localement sur `127.0.0.1:27017`. Son script d'initialisation crée les bases de logs, leur validateur strict, les index statistiques/TTL et l'utilisateur applicatif limité en lecture/écriture à ces deux bases.
 
 Les migrations se trouvent dans `database/migrations/` et doivent être appliquées dans l'ordre :
 
@@ -161,6 +168,8 @@ Les variables d'environnement attendues sont documentées dans `apps/api/.env.ex
 PORT=3000
 DATABASE_URL=postgresql://USER:PASSWORD@HOST:PORT/DATABASE
 FRONTEND_ORIGIN=http://localhost:5173
+MONGODB_URL=mongodb://atelier_logs:atelier_logs_dev@localhost:27017/atelier_solidaire_logs?authSource=admin
+ADMIN_API_TOKEN=0123456789abcdef0123456789abcdef
 ```
 
 Avec le PostgreSQL défini dans `database/compose.yml`, une valeur locale cohérente pour `DATABASE_URL` est :
@@ -169,7 +178,11 @@ Avec le PostgreSQL défini dans `database/compose.yml`, une valeur locale cohér
 DATABASE_URL=postgresql://atelier:atelier_dev@localhost:5433/atelier_solidaire
 ```
 
-Le fichier réel `apps/api/.env` n'est pas versionné.
+Le fichier réel `apps/api/.env` n'est pas versionné. Le jeton administrateur doit contenir au moins 32 caractères ; une valeur aléatoire peut être générée avec :
+
+```sh
+openssl rand -hex 32
+```
 
 Depuis `apps/api` :
 
@@ -194,11 +207,13 @@ npm start
 
 Le code TypeScript compilé est exécuté depuis `dist/server.js`.
 
-Une fois l'API démarrée, l'endpoint suivant vérifie son fonctionnement et sa connexion à PostgreSQL :
+Une fois l'API démarrée, l'endpoint suivant indique séparément l'état de PostgreSQL et de MongoDB :
 
 ```text
 GET http://localhost:3000/api/health
 ```
+
+MongoDB est utilisé uniquement pour les statistiques de tentatives. Une indisponibilité MongoDB n'empêche pas l'API de démarrer ni PostgreSQL d'accepter une réservation.
 
 ### Front
 
@@ -255,19 +270,32 @@ Le script `lint` exécute ESLint avec correction automatique et cache.
 
 ### API
 
-Depuis `apps/api` :
+Les tests d'intégration nécessitent PostgreSQL et MongoDB démarrés. Recréer d'abord la base PostgreSQL de test depuis la racine :
 
 ```sh
+docker compose -f database/compose.yml up -d
+./database/scripts/create-test-db.sh
+```
+
+Puis, depuis `apps/api` :
+
+```sh
+npm run lint
 npm run type-check
+npm run test:unit
+npm run test:integration
 npm test
 ```
 
-Aucun script `lint` n'est défini dans `apps/api/package.json`.
+`npm test` exécute les suites unitaires puis les tests d'intégration. Les tests d'intégration refusent de s'exécuter si les noms des bases PostgreSQL et MongoDB ne se terminent pas par `_test`.
 
 ## Documentation
 
+- [Contrat OpenAPI 3.1](docs/api/openapi.yaml)
 - [Préparation à la mise en production et exploitation](docs/production-exploitation.md)
 - [Architecture Decision Records](docs/adr/)
+- [Architecture API en couches](docs/adr/0002-api-layered-architecture.md)
+- [Journal MongoDB des tentatives](docs/adr/0003-mongodb-reservation-attempts.md)
 - [Modèle de données](database/docs/model.md)
 
 ## État du projet
@@ -283,13 +311,17 @@ Aucun script `lint` n'est défini dans `apps/api/package.json`.
 - schéma PostgreSQL pour les ateliers, créneaux, catégories, bénévoles, affectations, réservations et demandes de préqualification ;
 - migrations SQL et données de démonstration ;
 - scripts locaux de sauvegarde, restauration et création d'une base de test PostgreSQL ;
+- API Express structurée en couches HTTP, services métier et repositories avec injection de dépendances ;
 - API Express avec :
   - `GET /api/health` ;
   - `GET /api/workshops/:id/availability` ;
   - `POST /api/reservations` ;
-- validation des données de réservation avec Zod ;
+  - `GET /api/admin/stats/reservation-attempts?workshopId=<id>`, protégée par jeton administrateur ;
+- validation des données et de la configuration avec Zod ;
 - contrôle de disponibilité, de capacité et de fermeture des réservations côté API ;
-- configuration CORS via `FRONTEND_ORIGIN` ;
+- verrou PostgreSQL pour sérialiser les réservations concurrentes sur un même créneau/catégorie ;
+- journal MongoDB sans données personnelles avec rétention TTL de 180 jours ;
+- configuration CORS stricte via `FRONTEND_ORIGIN` et en-têtes de sécurité Helmet ;
 - documentation de préparation à la production ;
 - ADR documentant le choix de la stack Front.
 

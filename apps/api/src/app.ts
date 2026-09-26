@@ -1,60 +1,71 @@
-import cors from "cors";
-import express from "express";
+import cors from 'cors'
+import express, { type Express } from 'express'
+import helmet from 'helmet'
 
-import { pool } from "./db/pool.js";
-import { reservationsRouter } from "./routes/reservations.js";
-import { workshopsRouter } from "./routes/workshops.js";
+import { errorHandler } from './http/middleware/error-handler.js'
+import { createAdminRouter } from './http/routes/admin.js'
+import { createHealthRouter } from './http/routes/health.js'
+import { createReservationsRouter } from './http/routes/reservations.js'
+import { createWorkshopsRouter } from './http/routes/workshops.js'
+import type { AvailabilityService } from './services/availability-service.js'
+import type { Clock } from './services/clock.js'
+import type { HealthService } from './services/health-service.js'
+import type { ReservationAttemptService } from './services/reservation-attempt-service.js'
+import type { ReservationService } from './services/reservation-service.js'
 
-export const app = express();
-
-const frontendOrigin = process.env.FRONTEND_ORIGIN;
-
-if (!frontendOrigin) {
-  throw new Error("FRONTEND_ORIGIN is required");
+/** Dependencies required to construct the HTTP application without global state. */
+export interface AppDependencies {
+  availabilityService: AvailabilityService
+  reservationService: ReservationService
+  reservationAttemptService: ReservationAttemptService
+  healthService: HealthService
+  clock: Clock
+  frontendOrigin: string
+  adminApiToken: string
 }
 
-app.use(
-  cors({
-    origin(origin, callback) {
-      if (!origin || origin == frontendOrigin) {
-        callback(null, true);
-        return;
-      }
+/**
+ * Creates the Express application with injected business dependencies.
+ *
+ * @param dependencies - Services and validated HTTP configuration.
+ * @returns Configured Express application.
+ */
+export function createApp(dependencies: AppDependencies): Express {
+  const app = express()
 
-      callback(null, false);
-    },
-  }),
-);
-app.use(express.json());
+  app.use(helmet())
+  app.use(
+    cors({
+      origin(origin, callback) {
+        if (!origin || origin === dependencies.frontendOrigin) {
+          callback(null, true)
+          return
+        }
 
-app.get("/api/health", async (_req, res) => {
-  try {
-    const result = await pool.query<{
-      database: string;
-      timezone: string;
-      now: Date;
-    }>(`
-      SELECT
-        current_database() AS database,
-        current_setting('TIMEZONE') AS timezone,
-        NOW() AS now
-    `);
+        callback(null, false)
+      },
+    }),
+  )
+  app.use(express.json({ limit: '10kb' }))
 
-    res.json({
-      status: "ok",
-      database: result.rows[0].database,
-      timezone: result.rows[0].timezone,
-      now: result.rows[0].now,
-    });
-  } catch (error) {
-    console.error(error);
+  app.use('/api', createHealthRouter(dependencies.healthService))
+  app.use('/api/workshops', createWorkshopsRouter(dependencies.availabilityService))
+  app.use(
+    '/api/reservations',
+    createReservationsRouter(
+      dependencies.reservationService,
+      dependencies.reservationAttemptService,
+      dependencies.clock,
+    ),
+  )
+  app.use(
+    '/api/admin',
+    createAdminRouter(
+      dependencies.reservationAttemptService,
+      dependencies.adminApiToken,
+    ),
+  )
 
-    res.status(500).json({
-      status: "error",
-      code: "database_unavailable",
-    });
-  }
-});
-
-app.use("/api/workshops", workshopsRouter);
-app.use("/api/reservations", reservationsRouter);
+  app.use(errorHandler)
+  return app
+}

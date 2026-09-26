@@ -9,7 +9,7 @@ services:
       POSTGRES_PASSWORD: atelier_dev
 
     ports:
-      - "5433:5432"
+      - "127.0.0.1:5433:5432"
 
     volumes:
       - atelier_solidaire_pgdata:/var/lib/postgresql/data
@@ -20,5 +20,40 @@ services:
       timeout: 5s
       retries: 10
 
+  mongo:
+    image: mongo:8
+    container_name: atelier-solidaire-mongo
+
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: atelier_mongo_root_dev
+
+    ports:
+      - "127.0.0.1:27017:27017"
+
+    volumes:
+      - atelier_solidaire_mongodata:/data/db
+      - ./mongo/init:/docker-entrypoint-initdb.d:ro
+
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "mongosh",
+          "--quiet",
+          "--username",
+          "root",
+          "--password",
+          "atelier_mongo_root_dev",
+          "--authenticationDatabase",
+          "admin",
+          "--eval",
+          "db.adminCommand('ping').ok",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
 volumes:
   atelier_solidaire_pgdata:
+  atelier_solidaire_mongodata:
