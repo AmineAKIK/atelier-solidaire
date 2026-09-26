@@ -1,4 +1,4 @@
-FROM node:24.19.0-alpine AS build
+FROM node:26.10.0-alpine AS build
 
 WORKDIR /app
 
@@ -10,7 +10,7 @@ COPY src ./src
 
 RUN npx tsc
 
-FROM node:24.19.0-alpine AS runtime
+FROM node:26.10.0-alpine AS runtime
 
 ENV NODE_ENV=production
 WORKDIR /app
