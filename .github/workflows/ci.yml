@@ -1,0 +1,111 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  front:
+    name: Front
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: apps/front/package-lock.json
+      - working-directory: apps/front
+        run: npm ci
+      - working-directory: apps/front
+        run: npx eslint . --max-warnings=0
+      - working-directory: apps/front
+        run: npm run type-check
+      - working-directory: apps/front
+        run: npm run test:unit -- --run
+      - working-directory: apps/front
+        env:
+          VITE_API_URL: http://localhost:3000
+          VITE_WORKSHOP_ID: "2"
+        run: npm run build
+
+  api:
+    name: API
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: atelier_solidaire
+          POSTGRES_USER: atelier
+          POSTGRES_PASSWORD: atelier_dev
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U atelier -d atelier_solidaire"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+      mongo:
+        image: mongo:8
+        env:
+          MONGO_INITDB_ROOT_USERNAME: root
+          MONGO_INITDB_ROOT_PASSWORD: ci_mongo_root
+          MONGO_APP_PASSWORD: ci_mongo_app
+        ports:
+          - 27017:27017
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: apps/api/package-lock.json
+      - name: Initialize PostgreSQL test database
+        env:
+          POSTGRES_CONTAINER: ${{ job.services.postgres.id }}
+        run: |
+          docker exec "$POSTGRES_CONTAINER" psql -v ON_ERROR_STOP=1 -U atelier -d postgres -c "DROP DATABASE IF EXISTS atelier_solidaire_test WITH (FORCE);"
+          docker exec "$POSTGRES_CONTAINER" psql -v ON_ERROR_STOP=1 -U atelier -d postgres -c "CREATE DATABASE atelier_solidaire_test;"
+          for migration in database/migrations/001_schema.sql database/migrations/002_seed.sql database/migrations/003_timezone.sql database/migrations/004_backend_demo.sql database/migrations/005_test_scenarios.sql; do
+            docker exec -i "$POSTGRES_CONTAINER" psql -v ON_ERROR_STOP=1 -U atelier -d atelier_solidaire_test < "$migration"
+          done
+      - name: Initialize MongoDB logging databases
+        env:
+          MONGO_CONTAINER: ${{ job.services.mongo.id }}
+        run: |
+          for attempt in $(seq 1 30); do
+            if docker exec "$MONGO_CONTAINER" mongosh --quiet --username root --password ci_mongo_root --authenticationDatabase admin --eval "db.adminCommand('ping').ok" >/dev/null 2>&1; then
+              break
+            fi
+            sleep 1
+          done
+          docker exec -i "$MONGO_CONTAINER" mongosh --quiet --username root --password ci_mongo_root --authenticationDatabase admin < database/mongo/init/001-reservation-attempts.js
+      - working-directory: apps/api
+        run: npm ci
+      - working-directory: apps/api
+        run: npm run lint
+      - working-directory: apps/api
+        run: npm run type-check
+      - working-directory: apps/api
+        run: npm run test:unit
+      - working-directory: apps/api
+        env:
+          DATABASE_URL: postgresql://atelier:atelier_dev@127.0.0.1:5432/atelier_solidaire_test
+          FRONTEND_ORIGIN: http://localhost:5173
+          MONGODB_URL: mongodb://atelier_logs:ci_mongo_app@127.0.0.1:27017/atelier_solidaire_logs_test?authSource=admin
+          ADMIN_API_TOKEN: 0123456789abcdef0123456789abcdef
+          PORT: "3000"
+        run: npm run test:integration
+
+  docker:
+    name: Docker images
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build API image
+        run: docker build -t atelier-solidaire-api:ci apps/api
+      - name: Build Front image
+        run: docker build --build-arg VITE_WORKSHOP_ID=2 -t atelier-solidaire-front:ci apps/front

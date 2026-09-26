@@ -1,10 +1,13 @@
+// Read the application password from the environment in production while preserving the development default.
+const appPassword = process.env.MONGO_APP_PASSWORD || 'atelier_logs_dev'
+
 // Create the application user with readWrite access only to the logging databases.
 const adminDb = db.getSiblingDB('admin')
 
 if (!adminDb.getUser('atelier_logs')) {
   adminDb.createUser({
     user: 'atelier_logs',
-    pwd: 'atelier_logs_dev',
+    pwd: appPassword,
     roles: [
       { role: 'readWrite', db: 'atelier_solidaire_logs' },
       { role: 'readWrite', db: 'atelier_solidaire_logs_test' },
