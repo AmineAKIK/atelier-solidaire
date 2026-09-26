@@ -11,12 +11,29 @@
           avec l'aide de bénévoles.
         </p>
 
-        <AppButton to="/ateliers/12-septembre-2026"> Voir le prochain atelier </AppButton>
+        <AppButton to="/atelier"> Voir le prochain atelier </AppButton>
       </section>
 
-      <section id="prochain-atelier" class="next-workshop">
+      <section id="prochain-atelier" class="next-workshop" :aria-busy="reservation.availabilityLoading">
         <h2>Prochain atelier</h2>
-        <WorkshopCard />
+
+        <p v-if="reservation.availabilityLoading" class="api-state">
+          Chargement du prochain atelier…
+        </p>
+
+        <div v-else-if="reservation.availabilityError" class="api-state" role="alert">
+          <p>{{ reservation.availabilityError }}</p>
+          <button type="button" class="retry-button" @click="retryAvailability">Réessayer</button>
+        </div>
+
+        <WorkshopCard
+          v-else-if="reservation.workshop"
+          :title="reservation.workshop.title"
+          :date="reservation.workshopDate"
+          :time-range="reservation.workshopTimeRange"
+          :location="reservation.workshopLocation"
+          :categories="reservation.workshopCategories"
+        />
       </section>
 
       <section class="reservation-info">
@@ -32,10 +49,23 @@
 </template>
 
 <script setup lang="ts">
+import { onMounted } from 'vue'
+
 import AppHeader from '../components/AppHeader.vue'
 import InfoCallout from '../components/InfoCallout.vue'
 import WorkshopCard from '../components/WorkshopCard.vue'
 import AppButton from '../components/ui/AppButton.vue'
+import { useReservationStore } from '../stores/reservation'
+
+const reservation = useReservationStore()
+
+onMounted(() => {
+  void reservation.loadAvailability()
+})
+
+function retryAvailability() {
+  void reservation.loadAvailability(true)
+}
 </script>
 
 <style scoped>
@@ -70,6 +100,25 @@ import AppButton from '../components/ui/AppButton.vue'
 
 .reservation-info {
   margin-top: 48px;
+}
+
+.api-state {
+  max-width: 900px;
+}
+
+.api-state p {
+  margin: 0 0 12px;
+}
+
+.retry-button {
+  min-height: 42px;
+  padding: 0 18px;
+
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+
+  background: white;
+  color: var(--color-text);
 }
 
 h2 {
