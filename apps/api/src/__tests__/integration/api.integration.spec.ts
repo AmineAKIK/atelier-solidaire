@@ -315,6 +315,28 @@ describe('API integration', () => {
   it('allows exactly one of ten concurrent reservations for capacity one', async () => {
     const fixture = await createFixture()
 
+    await pool.query(
+      [
+        'CREATE OR REPLACE FUNCTION test_delay_reservation_insert()',
+        'RETURNS trigger',
+        'LANGUAGE plpgsql',
+        'AS $',
+        'BEGIN',
+        '  PERFORM pg_sleep(0.1);',
+        '  RETURN NEW;',
+        'END',
+        '$',
+      ].join('\n'),
+    )
+    await pool.query(
+      [
+        'CREATE TRIGGER test_delay_reservation_insert_trigger',
+        'BEFORE INSERT ON reservations',
+        'FOR EACH ROW',
+        'EXECUTE FUNCTION test_delay_reservation_insert()',
+      ].join('\n'),
+    )
+
     try {
       const responses = await Promise.all(
         Array.from({ length: 10 }, (_, index) =>
@@ -344,6 +366,10 @@ describe('API integration', () => {
       expect(full).toHaveLength(9)
       expect(stored.rows[0].count).toBe('1')
     } finally {
+      await pool.query(
+        'DROP TRIGGER IF EXISTS test_delay_reservation_insert_trigger ON reservations',
+      )
+      await pool.query('DROP FUNCTION IF EXISTS test_delay_reservation_insert()')
       await cleanupFixture(fixture)
     }
   })
