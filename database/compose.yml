@@ -1,0 +1,24 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: atelier-solidaire-postgres
+
+    environment:
+      POSTGRES_DB: atelier_solidaire
+      POSTGRES_USER: atelier
+      POSTGRES_PASSWORD: atelier_dev
+
+    ports:
+      - "5433:5432"
+
+    volumes:
+      - atelier_solidaire_pgdata:/var/lib/postgresql/data
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U atelier -d atelier_solidaire"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  atelier_solidaire_pgdata:

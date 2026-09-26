@@ -1,0 +1,9 @@
+
+# Backend environment
+apps/api/.env
+
+# Node dependencies
+node_modules/
+
+# Build artifacts
+apps/api/dist/
