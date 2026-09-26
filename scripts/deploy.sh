@@ -103,9 +103,10 @@ wait_for_health() {
 
 CURRENT_STEP="pre-deployment backup"
 existing_postgres="$("${COMPOSE[@]}" ps -a -q postgres)"
+postgres_volume="${PROJECT_NAME}_postgres_data"
 
-if [[ -n "$existing_postgres" ]]; then
-  "${COMPOSE[@]}" start postgres >/dev/null
+if [[ -n "$existing_postgres" ]] || docker volume inspect "$postgres_volume" >/dev/null 2>&1; then
+  "${COMPOSE[@]}" up -d postgres >/dev/null
   wait_for_health postgres
 
   mkdir -p "$BACKUP_DIR"
