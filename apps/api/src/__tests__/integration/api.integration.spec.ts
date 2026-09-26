@@ -215,7 +215,7 @@ async function waitForAttemptCount(
   throw new Error('Timed out waiting for MongoDB reservation attempts')
 }
 
-describe.sequential('API integration', () => {
+describe('API integration', () => {
   it('returns numeric availability counts from PostgreSQL', async () => {
     const fixture = await createFixture()
 
