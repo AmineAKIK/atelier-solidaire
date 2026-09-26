@@ -21,11 +21,19 @@
 </template>
 
 <script setup lang="ts">
-defineProps<{
+interface TimeSlotCardProps {
+  /** Local workshop time displayed to the participant. */
   time: string
+  /** Availability state controlling whether the slot can be selected. */
   status?: 'available' | 'full'
+  /** Whether this slot is currently selected. */
   selected?: boolean
-}>()
+}
+
+withDefaults(defineProps<TimeSlotCardProps>(), {
+  status: 'available',
+  selected: false,
+})
 
 defineEmits<{
   select: []

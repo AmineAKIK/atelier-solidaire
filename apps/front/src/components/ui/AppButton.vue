@@ -18,19 +18,22 @@
 <script setup lang="ts">
 import { RouterLink } from 'vue-router'
 
-withDefaults(
-  defineProps<{
-    to?: string
-    type?: 'button' | 'submit'
-    variant?: 'primary' | 'secondary'
-    disabled?: boolean
-  }>(),
-  {
-    type: 'button',
-    variant: 'primary',
-    disabled: false,
-  },
-)
+interface AppButtonProps {
+  /** Optional route rendered as a RouterLink when the control is enabled. */
+  to?: string
+  /** Native button type used when the component renders a button. */
+  type?: 'button' | 'submit'
+  /** Visual variant applied to the control. */
+  variant?: 'primary' | 'secondary'
+  /** Whether navigation and button activation are disabled. */
+  disabled?: boolean
+}
+
+withDefaults(defineProps<AppButtonProps>(), {
+  type: 'button',
+  variant: 'primary',
+  disabled: false,
+})
 
 defineEmits<{
   click: []

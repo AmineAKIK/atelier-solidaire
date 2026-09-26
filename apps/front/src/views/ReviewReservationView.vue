@@ -16,7 +16,14 @@
       <section class="card">
         <h2>Atelier</h2>
 
-        <p><strong>Date</strong> samedi 12 septembre 2026</p>
+        <p>
+          <strong>Atelier</strong>
+          {{ reservation.workshop?.title }}
+        </p>
+        <p>
+          <strong>Date</strong>
+          {{ reservation.workshopDate }}
+        </p>
         <p>
           <strong>Heure d'arrivée</strong>
           {{ reservation.arrivalTime }}
@@ -60,21 +67,57 @@
         </p>
       </section>
 
-      <p class="backend-note">
-        La confirmation réelle sera activée après connexion à l'API Backend.
-      </p>
+      <div v-if="reservation.submissionError" class="submission-error" role="alert">
+        <p>{{ reservation.submissionError }}</p>
 
-      <AppButton disabled> Confirmer ma réservation </AppButton>
+        <RouterLink
+          v-if="reservation.submissionErrorCode === 'capacity_full'"
+          to="/reservation/heure"
+          class="retry-link"
+        >
+          Choisir une autre heure
+        </RouterLink>
+
+        <RouterLink
+          v-else-if="
+            reservation.submissionErrorCode === 'booking_unavailable' ||
+            reservation.submissionErrorCode === 'not_found'
+          "
+          to="/reservation/heure"
+          class="retry-link"
+        >
+          Revenir au choix de l'heure
+        </RouterLink>
+      </div>
+
+      <AppButton
+        :disabled="reservation.submissionLoading"
+        @click="confirmReservation"
+      >
+        {{ reservation.submissionLoading ? 'Envoi en cours…' : 'Confirmer ma réservation' }}
+      </AppButton>
     </main>
   </div>
 </template>
 
 <script setup lang="ts">
+import { useRouter } from 'vue-router'
+
 import AppHeader from '../components/AppHeader.vue'
 import AppButton from '../components/ui/AppButton.vue'
 import { useReservationStore } from '../stores/reservation'
 
+const router = useRouter()
 const reservation = useReservationStore()
+
+async function confirmReservation() {
+  // Keeping the control disabled while this promise is pending prevents duplicate reservation POSTs.
+  const confirmed = await reservation.submitReservation()
+
+  if (confirmed) {
+    await router.push('/reservation/confirmation')
+  }
+}
 </script>
 
 <style scoped>
@@ -129,12 +172,26 @@ h1 {
   font-weight: 400;
 }
 
-.backend-note {
+.submission-error {
   max-width: 900px;
   margin: 24px 0 16px;
+  padding: 16px;
 
-  color: #4b5563;
-  font-size: 14px;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+
+  background: #fef2f2;
+  color: #991b1b;
+}
+
+.submission-error p {
+  margin: 0 0 8px;
+}
+
+.retry-link {
+  color: #1d4ed8;
+  font-weight: 600;
+  text-decoration: underline;
 }
 
 @media (max-width: 768px) {
