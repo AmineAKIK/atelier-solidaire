@@ -9,19 +9,22 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version-file: .nvmrc
-          cache: npm
-          cache-dependency-path: |
-            apps/api/package-lock.json
-            apps/front/package-lock.json
-
-      - name: Prepare production environment
+      - name: Verify production deployment
         shell: bash
         run: |
           set -euo pipefail
+
+          git clone --depth 1 --branch feat/production-deployment https://github.com/AmineAKIK/atelier-solidaire.git atelier-solidaire
+          cd atelier-solidaire
+
+          export NVM_DIR="$HOME/.nvm"
+          if [[ ! -s "$NVM_DIR/nvm.sh" ]]; then
+            curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
+          fi
+          . "$NVM_DIR/nvm.sh"
+          nvm install "$(cat .nvmrc)"
+          nvm use "$(cat .nvmrc)"
+
           {
             echo "POSTGRES_ADMIN_PASSWORD=$(openssl rand -hex 32)"
             echo "POSTGRES_APP_PASSWORD=$(openssl rand -hex 32)"
@@ -35,24 +38,22 @@ jobs:
           docker compose --project-name atelier-solidaire-prod --env-file deploy/.env -f deploy/compose.prod.yml down -v --remove-orphans || true
           rm -rf deploy/backups
 
-      - name: First production deployment
-        run: ./scripts/deploy.sh | tee /tmp/deploy-first.log
+          echo "=== First production deployment ==="
+          ./scripts/deploy.sh | tee /tmp/deploy-first.log
 
-      - name: Second production deployment
-        run: ./scripts/deploy.sh | tee /tmp/deploy-second.log
+          echo "=== Second production deployment ==="
+          ./scripts/deploy.sh | tee /tmp/deploy-second.log
 
-      - name: Verify backup and least-privilege role
-        shell: bash
-        run: |
-          set -euo pipefail
           set -a
           source deploy/.env
           set +a
 
+          echo "=== Backup verification ==="
           backup_count="$(find deploy/backups -maxdepth 1 -type f -name 'atelier_solidaire_*.dump' -size +0c | wc -l)"
           test "$backup_count" -ge 1
           echo "Second deployment backup files: $backup_count"
 
+          echo "=== Least-privilege PostgreSQL role ==="
           set +e
           docker compose             --project-name atelier-solidaire-prod             --env-file deploy/.env             -f deploy/compose.prod.yml             exec -T             -e PGPASSWORD="$POSTGRES_APP_PASSWORD"             postgres             psql -v ON_ERROR_STOP=1 -U atelier_app -d atelier_solidaire             -c "DROP TABLE reservations;" > /tmp/drop-table.log 2>&1
           drop_status=$?
@@ -60,14 +61,12 @@ jobs:
 
           cat /tmp/drop-table.log
           test "$drop_status" -ne 0
+
           docker compose             --project-name atelier-solidaire-prod             --env-file deploy/.env             -f deploy/compose.prod.yml             exec -T postgres             psql -U atelier_admin -d atelier_solidaire -Atc "SELECT to_regclass('public.reservations');"             | grep -qx "reservations"
+
           echo "atelier_app DROP TABLE check: permission denied as expected"
 
-      - name: Verify reservation through nginx and rate limiting
-        shell: bash
-        run: |
-          set -euo pipefail
-
+          echo "=== Reservation through nginx ==="
           curl -fsS http://127.0.0.1:8080/api/workshops/2/availability > /tmp/availability.json
 
           read -r slot_id category_id < <(
@@ -101,6 +100,7 @@ jobs:
           test "$status" = "201"
           echo "Reservation through nginx: HTTP $status"
 
+          echo "=== nginx rate limiting ==="
           rm -f /tmp/rate-*.code
           for index in $(seq 1 30); do
             (
@@ -113,11 +113,7 @@ jobs:
           cat /tmp/rate-*.code | grep -qx "429"
           echo "Repeated reservation POSTs reached HTTP 429"
 
-      - name: Verify unchanged API tests
-        shell: bash
-        run: |
-          set -euo pipefail
-
+          echo "=== Unchanged API test suite ==="
           docker compose -f database/compose.yml down -v --remove-orphans || true
           docker compose -f database/compose.yml up -d
 
@@ -152,9 +148,8 @@ jobs:
           grep -q '10 passed' /tmp/api-tests.log
           echo "API tests unchanged: 25 passed"
 
-      - name: Verify Front tests and type-check
-        working-directory: apps/front
-        run: |
+          echo "=== Front tests and type-check ==="
+          cd ../front
           npm ci
           npm run test:unit -- --run
           npm run type-check
