@@ -84,18 +84,18 @@ jobs:
               -d atelier_solidaire < "$migration"
           done
 
-          cat > apps/api/.env <<'EOF'
-PORT=3000
-DATABASE_URL=postgresql://atelier:atelier_dev@127.0.0.1:5433/atelier_solidaire
-FRONTEND_ORIGIN=http://localhost:5173
-MONGODB_URL=mongodb://atelier_logs:atelier_logs_dev@127.0.0.1:27017/atelier_solidaire_logs?authSource=admin
-ADMIN_API_TOKEN=0123456789abcdef0123456789abcdef
-EOF
+          printf '%s\n' \
+            'PORT=3000' \
+            'DATABASE_URL=postgresql://atelier:atelier_dev@127.0.0.1:5433/atelier_solidaire' \
+            'FRONTEND_ORIGIN=http://localhost:5173' \
+            'MONGODB_URL=mongodb://atelier_logs:atelier_logs_dev@127.0.0.1:27017/atelier_solidaire_logs?authSource=admin' \
+            'ADMIN_API_TOKEN=0123456789abcdef0123456789abcdef' \
+            > apps/api/.env
 
-          cat > apps/front/.env <<'EOF'
-VITE_API_URL=http://localhost:3000
-VITE_WORKSHOP_ID=2
-EOF
+          printf '%s\n' \
+            'VITE_API_URL=http://localhost:3000' \
+            'VITE_WORKSHOP_ID=2' \
+            > apps/front/.env
 
           (
             cd apps/api
