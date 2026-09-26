@@ -6,7 +6,7 @@ export default tseslint.config(
     ignores: ['dist/**', 'node_modules/**', 'eslint.config.js'],
   },
   js.configs.recommended,
-  ...tseslint.configs.recommendedTypeChecked,
+  ...tseslint.configs.recommended,
   {
     files: ['**/*.ts'],
     languageOptions: {
@@ -18,6 +18,12 @@ export default tseslint.config(
     rules: {
       eqeqeq: ['error', 'always'],
       '@typescript-eslint/no-floating-promises': 'error',
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        {
+          argsIgnorePattern: '^_',
+        },
+      ],
     },
   },
 )
