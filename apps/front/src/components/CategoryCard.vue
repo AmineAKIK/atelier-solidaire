@@ -21,13 +21,23 @@
 </template>
 
 <script setup lang="ts">
-defineProps<{
+interface CategoryCardProps {
+  /** Category name displayed to the participant. */
   title: string
+  /** Short explanation of the objects covered by the category. */
   description: string
+  /** Whether this category is currently selected. */
   selected?: boolean
+  /** Whether the card uses the alternate dashed presentation. */
   dashed?: boolean
+  /** Optional label used for special category handling. */
   badge?: string
-}>()
+}
+
+withDefaults(defineProps<CategoryCardProps>(), {
+  selected: false,
+  dashed: false,
+})
 
 defineEmits<{
   select: []
