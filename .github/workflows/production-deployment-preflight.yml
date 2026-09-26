@@ -110,7 +110,7 @@ jobs:
           wait
 
           cat /tmp/rate-*.code | sort | uniq -c
-          cat /tmp/rate-*.code | grep -qx "429"
+          grep -q -x "429" /tmp/rate-*.code
           echo "Repeated reservation POSTs reached HTTP 429"
 
           echo "=== Unchanged API test suite ==="
