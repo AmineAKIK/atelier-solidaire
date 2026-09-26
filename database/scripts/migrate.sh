@@ -3,6 +3,8 @@ set -euo pipefail
 
 # This script must be run from the repository root.
 COMPOSE_FILE="${COMPOSE_FILE:-database/compose.yml}"
+COMPOSE_PROJECT_NAME_VALUE="${COMPOSE_PROJECT_NAME:-}"
+COMPOSE_ENV_FILE="${COMPOSE_ENV_FILE:-}"
 DB_USER="${DB_USER:-atelier}"
 DB_NAME="${DB_NAME:-atelier_solidaire}"
 DB_PASSWORD="${DB_PASSWORD:-atelier_dev}"
@@ -26,7 +28,17 @@ for migration in "${migrations[@]}"; do
   fi
 done
 
-COMPOSE=(docker compose -f "$COMPOSE_FILE")
+COMPOSE=(docker compose)
+
+if [[ -n "$COMPOSE_PROJECT_NAME_VALUE" ]]; then
+  COMPOSE+=(--project-name "$COMPOSE_PROJECT_NAME_VALUE")
+fi
+
+if [[ -n "$COMPOSE_ENV_FILE" ]]; then
+  COMPOSE+=(--env-file "$COMPOSE_ENV_FILE")
+fi
+
+COMPOSE+=(-f "$COMPOSE_FILE")
 
 psql_exec() {
   "${COMPOSE[@]}" exec -T \

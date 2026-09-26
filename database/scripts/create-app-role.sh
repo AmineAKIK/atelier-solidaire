@@ -3,6 +3,8 @@ set -euo pipefail
 
 # This script must be run from the repository root.
 COMPOSE_FILE="${COMPOSE_FILE:-deploy/compose.prod.yml}"
+COMPOSE_PROJECT_NAME_VALUE="${COMPOSE_PROJECT_NAME:-}"
+COMPOSE_ENV_FILE="${COMPOSE_ENV_FILE:-}"
 DB_ADMIN_USER="${DB_ADMIN_USER:-atelier_admin}"
 DB_NAME="${DB_NAME:-atelier_solidaire}"
 DB_ADMIN_PASSWORD="${POSTGRES_ADMIN_PASSWORD:-}"
@@ -18,7 +20,17 @@ if [[ ! -f "$COMPOSE_FILE" ]]; then
   exit 1
 fi
 
-COMPOSE=(docker compose -f "$COMPOSE_FILE")
+COMPOSE=(docker compose)
+
+if [[ -n "$COMPOSE_PROJECT_NAME_VALUE" ]]; then
+  COMPOSE+=(--project-name "$COMPOSE_PROJECT_NAME_VALUE")
+fi
+
+if [[ -n "$COMPOSE_ENV_FILE" ]]; then
+  COMPOSE+=(--env-file "$COMPOSE_ENV_FILE")
+fi
+
+COMPOSE+=(-f "$COMPOSE_FILE")
 
 # Reconcile the application role on every deployment without granting ownership or DDL rights.
 "${COMPOSE[@]}" exec -T \

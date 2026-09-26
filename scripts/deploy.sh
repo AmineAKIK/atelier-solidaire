@@ -136,6 +136,8 @@ ok "database startup"
 
 CURRENT_STEP="database migrations"
 COMPOSE_FILE="$COMPOSE_FILE" \
+COMPOSE_PROJECT_NAME="$PROJECT_NAME" \
+COMPOSE_ENV_FILE="$ENV_FILE" \
 DB_USER="atelier_admin" \
 DB_NAME="atelier_solidaire" \
 DB_PASSWORD="$POSTGRES_ADMIN_PASSWORD" \
@@ -144,6 +146,8 @@ ok "database migrations"
 
 CURRENT_STEP="PostgreSQL application role"
 COMPOSE_FILE="$COMPOSE_FILE" \
+COMPOSE_PROJECT_NAME="$PROJECT_NAME" \
+COMPOSE_ENV_FILE="$ENV_FILE" \
 POSTGRES_ADMIN_PASSWORD="$POSTGRES_ADMIN_PASSWORD" \
 POSTGRES_APP_PASSWORD="$POSTGRES_APP_PASSWORD" \
 ./database/scripts/create-app-role.sh
