@@ -1,6 +1,5 @@
 import type {
   ReservationAttempt,
-  ReservationAttemptReason,
   ReservationAttemptStat,
 } from '../domain/reservation.js'
 import type { ReservationAttemptRepositoryPort } from '../repositories/reservation-attempt-repository.js'
@@ -108,9 +107,3 @@ function toPositiveIntegerOrNull(value: unknown): number | null {
     : null
 }
 
-/** Ensures a booking error code is also a valid reservation-attempt reason. */
-export function bookingReason(
-  reason: ReservationAttemptReason,
-): ReservationAttemptReason {
-  return reason
-}
