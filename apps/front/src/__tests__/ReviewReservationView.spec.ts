@@ -11,6 +11,7 @@ function createTestRouter() {
   return createRouter({
     history: createMemoryHistory(),
     routes: [
+      { path: '/', component: { template: '<div />' } },
       { path: '/reservation/informations', component: { template: '<div />' } },
       { path: '/reservation/verifier', component: { template: '<div />' } },
       { path: '/reservation/confirmation', component: { template: '<div />' } },
