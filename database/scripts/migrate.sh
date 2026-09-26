@@ -58,8 +58,8 @@ SQL
 for migration in "${migrations[@]}"; do
   filename="$(basename "$migration")"
   applied="$(
-    psql_exec -At -v migration_name="$filename" \
-      -c "SELECT EXISTS (SELECT 1 FROM schema_migrations WHERE filename = :'migration_name');"
+    psql_exec -At \
+      -c "SELECT EXISTS (SELECT 1 FROM schema_migrations WHERE filename = '$filename');"
   )"
 
   if [[ "$applied" == "t" ]]; then
@@ -72,9 +72,9 @@ for migration in "${migrations[@]}"; do
   {
     printf 'BEGIN;\n'
     cat "$migration"
-    printf '\nINSERT INTO schema_migrations (filename) VALUES (:\x27migration_name\x27);\n'
+    printf "\nINSERT INTO schema_migrations (filename) VALUES ('%s');\n" "$filename"
     printf 'COMMIT;\n'
-  } | psql_exec -v migration_name="$filename"
+  } | psql_exec
 done
 
 printf 'Production migrations are up to date.\n'
