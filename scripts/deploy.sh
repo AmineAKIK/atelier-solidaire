@@ -173,7 +173,33 @@ if ! grep -q '"mongodb":{"status":"ok"' <<<"$health_body"; then
   exit 1
 fi
 
-curl --fail --silent --show-error --output /dev/null http://127.0.0.1:8080/
+home_html="$(curl --fail --silent --show-error http://127.0.0.1:8080/)"
+
+mapfile -t javascript_assets < <(
+  grep -oE 'src="/assets/[^"]+\.js"' <<<"$home_html"     | sed -E 's/^src="([^"]+)"$/\1/'
+)
+
+if [[ "${#javascript_assets[@]}" -eq 0 ]]; then
+  echo "No JavaScript asset was found in the nginx home page." >&2
+  exit 1
+fi
+
+frontend_origin_found=false
+
+for asset_path in "${javascript_assets[@]}"; do
+  javascript_body="$(curl --fail --silent --show-error "http://127.0.0.1:8080${asset_path}")"
+
+  if grep -Fq -- "$FRONTEND_ORIGIN" <<<"$javascript_body"; then
+    frontend_origin_found=true
+    break
+  fi
+done
+
+if [[ "$frontend_origin_found" != "true" ]]; then
+  echo "The served Front bundle does not contain FRONTEND_ORIGIN: $FRONTEND_ORIGIN" >&2
+  exit 1
+fi
+
 ok "smoke tests"
 
 printf '\nDeployment completed successfully.\n'

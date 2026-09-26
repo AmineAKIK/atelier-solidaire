@@ -72,7 +72,9 @@ Required values are:
   user;
 - `ADMIN_API_TOKEN`: bearer token protecting the administrative statistics
   endpoint;
-- `FRONTEND_ORIGIN`: exact public origin allowed by the API CORS policy;
+- `FRONTEND_ORIGIN`: exact public URL of the application. The API uses this
+  value for its CORS policy, and the Front Docker build compiles the same value
+  as `VITE_API_URL`;
 - `VITE_WORKSHOP_ID`: workshop identifier compiled into the Front image.
 
 Generate every secret independently:
@@ -81,9 +83,16 @@ Generate every secret independently:
 openssl rand -hex 32
 ```
 
-The Front Docker build deliberately sets `VITE_API_URL` to an empty value
-because nginx exposes the API under the same origin at `/api`. No API service
-port is published by Docker Compose.
+`FRONTEND_ORIGIN` must be the exact origin users open in their browser. Docker
+Compose passes it to the API as the allowed CORS origin and to the Front build
+as `VITE_API_URL`. The browser therefore calls
+`${FRONTEND_ORIGIN}/api/...`, and nginx forwards those requests to the
+internal API service.
+
+For the local demonstration, open exactly `http://127.0.0.1:8080`. For a real
+deployment, set the public HTTPS origin, for example
+`https://atelier.example.org`, and open the application at that same address.
+No API service port is published by Docker Compose.
 
 ## First deployment
 
@@ -91,7 +100,8 @@ From the repository root:
 
 ```sh
 cp deploy/.env.example deploy/.env
-# Replace every placeholder secret and review FRONTEND_ORIGIN / VITE_WORKSHOP_ID.
+# Replace every placeholder secret and set FRONTEND_ORIGIN to the exact URL
+# that users will open, then review VITE_WORKSHOP_ID.
 ./scripts/deploy.sh
 ```
 
