@@ -73,7 +73,7 @@ jobs:
             await page.getByRole('link', { name: 'Continuer' }).click()
 
             await page.getByLabel('Prénom *').fill('Navigateur')
-            await page.getByLabel('Nom *').fill('Production')
+            await page.getByLabel('Nom *', { exact: true }).fill('Production')
             await page.getByLabel('Adresse e-mail *').fill('browser-production@example.test')
             await page.getByLabel('Objet ou appareil *').fill('Ordinateur portable')
             await page
