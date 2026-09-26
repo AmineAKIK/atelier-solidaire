@@ -1,0 +1,108 @@
+name: Production Front API URL preflight
+
+on:
+  push:
+    branches:
+      - fix/production-front-api-url
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify update deployment and browser reservation
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git clone https://github.com/AmineAKIK/atelier-solidaire.git atelier-solidaire
+          cd atelier-solidaire
+
+          git checkout main
+
+          {
+            echo "POSTGRES_ADMIN_PASSWORD=$(openssl rand -hex 32)"
+            echo "POSTGRES_APP_PASSWORD=$(openssl rand -hex 32)"
+            echo "MONGO_ADMIN_PASSWORD=$(openssl rand -hex 32)"
+            echo "MONGO_APP_PASSWORD=$(openssl rand -hex 32)"
+            echo "ADMIN_API_TOKEN=$(openssl rand -hex 32)"
+            echo "FRONTEND_ORIGIN=http://127.0.0.1:8080"
+            echo "VITE_WORKSHOP_ID=2"
+          } > deploy/.env
+
+          docker compose             --project-name atelier-solidaire-prod             --env-file deploy/.env             -f deploy/compose.prod.yml             down -v --remove-orphans || true
+          rm -rf deploy/backups
+
+          echo "=== Existing installation from main ==="
+          ./scripts/deploy.sh | tee /tmp/deploy-main.log
+
+          git fetch origin fix/production-front-api-url
+          git checkout -B fix/production-front-api-url origin/fix/production-front-api-url
+
+          echo "=== Update deployment from fix branch ==="
+          ./scripts/deploy.sh | tee /tmp/deploy-update.log
+
+          echo "=== Backup verification ==="
+          backup_count="$(find deploy/backups -maxdepth 1 -type f -name 'atelier_solidaire_*.dump' -size +0c | wc -l)"
+          test "$backup_count" -ge 1
+          echo "Update deployment backup files: $backup_count"
+
+          echo "=== Browser end-to-end reservation ==="
+          mkdir -p /tmp/atelier-playwright
+          cd /tmp/atelier-playwright
+          npm init -y >/dev/null
+          npm install --no-save @playwright/test@1.55.0 >/dev/null
+          npx playwright install --with-deps chromium >/dev/null
+
+          cat > reservation.spec.js <<'EOF'
+          const { test, expect } = require('@playwright/test')
+
+          test('completes a production reservation through nginx', async ({ page }) => {
+            const publicOrigin = 'http://127.0.0.1:8080'
+
+            await page.goto(publicOrigin + '/')
+            await expect(page.getByRole('heading', { name: 'Réparez plutôt que jeter' })).toBeVisible()
+
+            await page.getByRole('link', { name: 'Voir le prochain atelier' }).click()
+            await page.getByRole('button', { name: /Informatique/ }).click()
+            await page.getByRole('link', { name: 'Voir les heures disponibles' }).click()
+
+            const availableSlot = page.locator('button.time-slot:not([disabled])').first()
+            await expect(availableSlot).toBeVisible()
+            await availableSlot.click()
+
+            await page.getByRole('link', { name: 'Continuer' }).click()
+
+            await page.getByLabel('Prénom *').fill('Navigateur')
+            await page.getByLabel('Nom *').fill('Production')
+            await page.getByLabel('Adresse e-mail *').fill('browser-production@example.test')
+            await page.getByLabel('Objet ou appareil *').fill('Ordinateur portable')
+            await page
+              .getByLabel('Décrivez brièvement le problème *')
+              .fill('Test Playwright du parcours de réservation de production.')
+
+            await page.getByRole('button', { name: 'Continuer' }).click()
+            await expect(
+              page.getByRole('heading', { name: 'Vérifier votre réservation' }),
+            ).toBeVisible()
+
+            const [reservationResponse] = await Promise.all([
+              page.waitForResponse(
+                (response) =>
+                  response.url() === publicOrigin + '/api/reservations' &&
+                  response.request().method() === 'POST',
+              ),
+              page.getByRole('button', { name: 'Confirmer ma réservation' }).click(),
+            ])
+
+            expect(reservationResponse.status()).toBe(201)
+            await expect(
+              page.getByRole('heading', { name: 'Réservation confirmée' }),
+            ).toBeVisible()
+
+            console.log('Browser reservation POST:', reservationResponse.status())
+            console.log('Browser reservation URL:', reservationResponse.url())
+            console.log('Confirmation heading: Réservation confirmée')
+          })
+          EOF
+
+          npx playwright test reservation.spec.js --browser=chromium --reporter=line
