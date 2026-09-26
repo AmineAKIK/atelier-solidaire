@@ -26,14 +26,22 @@ const command: CreateReservationCommand = {
   problemDescription: 'Does not start.',
 }
 
+/** Deterministic clock used by ReservationService unit tests. */
 class FixedClock implements Clock {
+  /**
+   * Creates a clock that always returns the same instant.
+   *
+   * @param instant - Fixed instant returned by now().
+   */
   public constructor(private readonly instant: Date) {}
 
+  /** Returns the configured fixed instant. */
   public now(): Date {
     return new Date(this.instant)
   }
 }
 
+/** In-memory transaction double for booking-rule unit tests. */
 class FakeTransaction implements ReservationTransactionPort {
   public readonly insertReservation = vi.fn(async () => ({
     id: '10',
@@ -42,6 +50,12 @@ class FakeTransaction implements ReservationTransactionPort {
     createdAt: new Date('2026-09-26T08:00:00.000Z'),
   }))
 
+  /**
+   * Creates a transaction double.
+   *
+   * @param context - Booking context returned to the service.
+   * @param capacity - Capacity values returned to the service.
+   */
   public constructor(
     private readonly context: BookingContext | null,
     private readonly capacity: ReservationCapacity = {
@@ -50,18 +64,32 @@ class FakeTransaction implements ReservationTransactionPort {
     },
   ) {}
 
+  /** Returns the configured booking context. */
   public async getBookingContextForUpdate(): Promise<BookingContext | null> {
     return this.context
   }
 
+  /** Returns the configured capacity values. */
   public async getCapacity(): Promise<ReservationCapacity> {
     return this.capacity
   }
 }
 
+/** Repository double that executes work against one in-memory transaction. */
 class FakeReservationRepository implements ReservationRepositoryPort {
+  /**
+   * Creates a reservation repository double.
+   *
+   * @param transaction - Transaction double exposed to ReservationService.
+   */
   public constructor(public readonly transaction: FakeTransaction) {}
 
+  /**
+   * Executes reservation work without a real database transaction.
+   *
+   * @param work - ReservationService callback under test.
+   * @returns The callback result.
+   */
   public async withTransaction<T>(
     work: (transaction: ReservationTransactionPort) => Promise<T>,
   ): Promise<T> {
@@ -69,9 +97,15 @@ class FakeReservationRepository implements ReservationRepositoryPort {
   }
 }
 
+/** Captures non-blocking reservation-attempt events in memory. */
 class CapturingAttemptRecorder {
   public readonly attempts: ReservationAttempt[] = []
 
+  /**
+   * Stores one emitted attempt for assertions.
+   *
+   * @param attempt - Reservation-attempt event emitted by the service.
+   */
   public recordNonBlocking(attempt: ReservationAttempt): void {
     this.attempts.push(attempt)
   }
@@ -224,6 +258,35 @@ describe('ReservationService', () => {
     expect(result.reservation.id).toBe('10')
     expect(warning).toHaveBeenCalledOnce()
     warning.mockRestore()
+  })
+
+  it('records exactly one internal_error attempt when PostgreSQL fails', async () => {
+    const attempts = new CapturingAttemptRecorder()
+    const repository: ReservationRepositoryPort = {
+      async withTransaction<T>(): Promise<T> {
+        throw new Error('PostgreSQL unavailable')
+      },
+    }
+    const service = new ReservationService(
+      repository,
+      attempts,
+      new FixedClock(new Date('2026-10-08T07:00:00.000Z')),
+    )
+
+    await expect(service.createReservation(command)).rejects.toThrow(
+      'PostgreSQL unavailable',
+    )
+
+    expect(attempts.attempts).toHaveLength(1)
+    expect(attempts.attempts[0]).toMatchObject({
+      workshopId: null,
+      slotId: 4,
+      categoryId: 1,
+      outcome: 'refused',
+      reason: 'internal_error',
+    })
+    expect(JSON.stringify(attempts.attempts[0])).not.toContain(command.email)
+    expect(JSON.stringify(attempts.attempts[0])).not.toContain(command.lastName)
   })
 
   it('records no personal data in the reservation-attempt event', async () => {
