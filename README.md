@@ -174,7 +174,22 @@ GET http://localhost:3000/api/health
 
 ### Front
 
-Depuis `apps/front` :
+Le Front utilise les variables documentées dans `apps/front/.env.example` :
+
+```dotenv
+VITE_API_URL=http://localhost:3000
+VITE_WORKSHOP_ID=2
+```
+
+`VITE_API_URL` indique l'adresse de l'API et `VITE_WORKSHOP_ID` sélectionne l'atelier de démonstration chargé par le parcours de réservation. Le fichier local `apps/front/.env` est ignoré par Git.
+
+Depuis `apps/front`, créer la configuration locale à partir de l'exemple :
+
+```sh
+cp .env.example .env
+```
+
+L'API doit être démarrée avant le Front pour charger l'atelier, les disponibilités et enregistrer une réservation.
 
 #### Développement
 
@@ -231,8 +246,11 @@ Aucun script `lint` n'est défini dans `apps/api/package.json`.
 
 ### Réalisé
 
-- Front Vue avec navigation SPA ;
-- parcours participant en plusieurs étapes : accueil, atelier, choix d'un créneau, informations participant et vérification de la réservation ;
+- Front Vue avec navigation SPA et chargement différé des vues de réservation ;
+- parcours participant en plusieurs étapes : accueil, atelier, choix d'un créneau, informations participant, vérification et confirmation de la réservation ;
+- Front raccordé à l'API pour charger l'atelier et les disponibilités puis créer une réservation ;
+- gestion côté Front des états de chargement, des créneaux complets et des erreurs de réservation renvoyées par l'API ;
+- la catégorie « Je ne sais pas / autre » reste un parcours de préqualification et ne crée pas de réservation ;
 - état de réservation partagé côté Front avec Pinia ;
 - schéma PostgreSQL pour les ateliers, créneaux, catégories, bénévoles, affectations, réservations et demandes de préqualification ;
 - migrations SQL et données de démonstration ;
@@ -250,7 +268,6 @@ Aucun script `lint` n'est défini dans `apps/api/package.json`.
 
 D'après le code et la documentation actuellement versionnés :
 
-- le Front n'est pas encore raccordé à l'API Backend ;
 - l'application complète n'est pas encore déployée publiquement ;
 - HTTPS, la supervision, les sauvegardes et le redémarrage automatique restent à mettre en œuvre pour un déploiement réel ;
 - les interfaces dédiées aux bénévoles et à la coordination ne sont pas présentes dans les vues Front actuelles.
